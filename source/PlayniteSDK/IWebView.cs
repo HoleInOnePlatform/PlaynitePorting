@@ -78,6 +78,11 @@ namespace Playnite.SDK
         public int WindowHeight { get; set; } = 0;
 
         /// <summary>
+        /// Display only the web content in a borderless full-screen window.
+        /// </summary>
+        public bool FullscreenContentOnly { get; set; } = false;
+
+        /// <summary>
         /// Gets or sets window background color.
         /// </summary>
         public Color WindowBackground { get; set; } = Colors.Transparent;

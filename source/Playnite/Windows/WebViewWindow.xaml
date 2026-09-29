@@ -11,8 +11,13 @@
         Style="{DynamicResource StandardWindowStyle}"
         WindowStartupLocation="CenterOwner"
         KeyUp="WindowBase_KeyUp">
+    <controls:WindowBase.Resources>
+        <ControlTemplate x:Key="ContentOnlyTemplate" TargetType="{x:Type controls:WindowBase}">
+            <ContentPresenter />
+        </ControlTemplate>
+    </controls:WindowBase.Resources>
     <DockPanel Name="PanelContent">
-        <TextBox Text="{Binding Address, ElementName=Browser}"
+        <TextBox x:Name="AddressBar" Text="{Binding Address, ElementName=Browser}"
                  Background="{DynamicResource NormalBrushDark}"
                  DockPanel.Dock="Top" IsReadOnly="True" BorderThickness="0"/>
         <cefSharp:ChromiumWebBrowser Name="Browser" DockPanel.Dock="Bottom" />

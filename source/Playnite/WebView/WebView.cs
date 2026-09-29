@@ -9,6 +9,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Shell;
 using Playnite.SDK.Events;
 using CefSharp.Wpf.Rendering.Experimental;
 
@@ -49,6 +51,15 @@ namespace Playnite.WebView
             window.Width = settings.WindowWidth;
             window.Height = settings.WindowHeight;
             window.PanelContent.Background = new SolidColorBrush(settings.WindowBackground);
+            if (settings.FullscreenContentOnly)
+            {
+                window.AddressBar.Visibility = Visibility.Collapsed;
+                window.Template = (ControlTemplate)window.Resources["ContentOnlyTemplate"];
+                WindowChrome.SetWindowChrome(window, null);
+                window.WindowStyle = WindowStyle.None;
+                window.ResizeMode = ResizeMode.NoResize;
+                window.WindowState = WindowState.Maximized;
+            }
         }
 
         private async void Browser_IsBrowserInitializedChanged(object sender, DependencyPropertyChangedEventArgs e)

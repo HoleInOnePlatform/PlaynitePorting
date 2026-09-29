@@ -71,6 +71,8 @@ namespace Playnite
 
     public class GamesEditor : ObservableObject, IDisposable
     {
+        // Replace this with the GameLink session URL when it becomes available.
+        private const string InstantPlayUrl = "about:blank";
         private static ILogger logger = LogManager.GetLogger();
         private static bool showedPowerShellError = false;
         private IResourceProvider resources = new ResourceProvider();
@@ -188,6 +190,20 @@ namespace Playnite
 
         public void PlayGame(Game game, bool launchedFromUI, int actionIndex = -1)
         {
+            if (launchedFromUI)
+            {
+                using (var webView = Application.PlayniteApiGlobal.WebViews.CreateView(new WebViewSettings
+                {
+                    FullscreenContentOnly = true
+                }))
+                {
+                    webView.Navigate(InstantPlayUrl);
+                    webView.OpenDialog();
+                }
+
+                return;
+            }
+
             if (!game.IsInstalled)
             {
                 InstallGame(game);
