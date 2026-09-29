@@ -46,6 +46,7 @@ namespace Playnite.DesktopApp.ViewModels
         public RelayCommand<ExtensionFunction> InvokeExtensionFunctionCommand { get; private set; }
         public RelayCommand<object> ReloadScriptsCommand { get; private set; }
         public RelayCommand<GamesCollectionViewEntry> ShowGameSideBarCommand { get; private set; }
+        public RelayCommand<GamesCollectionViewEntry> ShowGameDetailsCommand { get; private set; }
         public RelayCommand<object> CloseGameSideBarCommand { get; private set; }
         public RelayCommand<object> OpenSearchCommand { get; private set; }
         public RelayCommand OpenGlobalSearchCommand { get; private set; }
@@ -318,6 +319,15 @@ namespace Playnite.DesktopApp.ViewModels
                 if (SelectedGame?.Game.Id != f.Id)
                 {
                     SelectedGames = new List<GamesCollectionViewEntry> { f };
+                }
+            });
+
+            ShowGameDetailsCommand = new RelayCommand<GamesCollectionViewEntry>((entry) =>
+            {
+                entry = entry ?? SelectedGame;
+                if (entry != null)
+                {
+                    new GameDetailsWindow(entry, this) { Owner = Application.Current.MainWindow }.ShowDialog();
                 }
             });
 

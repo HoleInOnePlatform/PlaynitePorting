@@ -65,10 +65,10 @@ namespace Playnite.DesktopApp.Controls
             {
                 if (!DesignerProperties.GetIsInDesignMode(this))
                 {
-                    var mBinding = new MouseBinding(mainModel.StartGameCommand, new MouseGesture(MouseAction.LeftDoubleClick));
+                    var mBinding = new MouseBinding(mainModel.ShowGameDetailsCommand, new MouseGesture(MouseAction.LeftDoubleClick));
                     BindingTools.SetBinding(mBinding,
                         MouseBinding.CommandParameterProperty,
-                        nameof(GamesCollectionViewEntry.Game));
+                        string.Empty);
                     PanelHost.InputBindings.Add(mBinding);
 
                     PanelHost.ContextMenu = new GameMenu(mainModel) { ShowStartSection = true };

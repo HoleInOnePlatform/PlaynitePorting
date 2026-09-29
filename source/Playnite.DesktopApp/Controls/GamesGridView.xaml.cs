@@ -374,22 +374,7 @@ namespace Playnite.DesktopApp.Controls
             }
 
             var entry = (GamesCollectionViewEntry)GridGames.SelectedItems[0];
-            var game = entry.Game;
-            if (game.IsInstalled)
-            {
-                PlayniteApplication.Current.GamesEditor.PlayGame(game, true);
-            }
-            else
-            {
-                if (game.IsCustomGame)
-                {
-                    ((DesktopGamesEditor)DesktopApplication.Current.GamesEditor).EditGame(game);
-                }
-                else
-                {
-                    DesktopApplication.Current.GamesEditor.InstallGame(game);
-                }
-            }
+            DesktopApplication.Current.MainModel.ShowGameDetailsCommand.Execute(entry);
         }
 
         private void GridViewColumnHeader_Click(object sender, RoutedEventArgs e)
