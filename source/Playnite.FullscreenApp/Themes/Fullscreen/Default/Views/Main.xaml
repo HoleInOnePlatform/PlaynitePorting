@@ -162,10 +162,6 @@
                                 </Grid.ColumnDefinitions>
 
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <!--Install-->
-                                    <ButtonEx x:Name="PART_ButtonInstall"
-                                              Style="{DynamicResource ButtonBottomMenu}"
-                                              Content="{DynamicResource LOCInstallGame}" />
                                     <!--Play-->
                                     <ButtonEx x:Name="PART_ButtonPlay"
                                               Style="{DynamicResource ButtonBottomMenu}"

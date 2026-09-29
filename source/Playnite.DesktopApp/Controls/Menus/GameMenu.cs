@@ -104,44 +104,19 @@ namespace Playnite.DesktopApp.Controls
 
         private void InitializeItems(Game game)
         {
-            // Play / Install
+            // Play
             if (ShowStartSection)
             {
-                bool added = false;
-                if (game.IsInstalled)
+                Items.Add(new MenuItem()
                 {
-                    var playItem = new MenuItem()
-                    {
-                        Header = ResourceProvider.GetString(LOC.PlayGame),
-                        Icon = startIcon,
-                        FontWeight = FontWeights.Bold,
-                        Command = model.StartGameCommand,
-                        CommandParameter = game,
-                        InputGestureText = model.StartSelectedGameCommand.GestureText
-                    };
-
-                    Items.Add(playItem);
-                    added = true;
-                }
-                else if (!game.IsCustomGame)
-                {
-                    var installItem = new MenuItem()
-                    {
-                        Header = ResourceProvider.GetString(LOC.InstallGame),
-                        Icon = installIcon,
-                        FontWeight = FontWeights.Bold,
-                        Command = model.InstallGameCommand,
-                        CommandParameter = game
-                    };
-
-                    Items.Add(installItem);
-                    added = true;
-                }
-
-                if (added)
-                {
-                    Items.Add(new Separator());
-                }
+                    Header = ResourceProvider.GetString(LOC.PlayGame),
+                    Icon = startIcon,
+                    FontWeight = FontWeights.Bold,
+                    Command = model.StartGameCommand,
+                    CommandParameter = game,
+                    InputGestureText = model.StartSelectedGameCommand.GestureText
+                });
+                Items.Add(new Separator());
             }
 
             // Custom Actions

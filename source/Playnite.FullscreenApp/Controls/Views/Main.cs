@@ -35,7 +35,6 @@ namespace Playnite.FullscreenApp.Controls.Views
     [TemplatePart(Name = "PART_ElemExtraFilterActive", Type = typeof(FrameworkElement))]
     [TemplatePart(Name = "PART_ElemSearchActive", Type = typeof(FrameworkElement))]
     [TemplatePart(Name = "PART_ListGameItems", Type = typeof(ListBox))]
-    [TemplatePart(Name = "PART_ButtonInstall", Type = typeof(ButtonEx))]
     [TemplatePart(Name = "PART_ButtonPlay", Type = typeof(ButtonEx))]
     [TemplatePart(Name = "PART_ButtonSearch", Type = typeof(ButtonEx))]
     [TemplatePart(Name = "PART_ButtonFilter", Type = typeof(ButtonEx))]
@@ -65,7 +64,6 @@ namespace Playnite.FullscreenApp.Controls.Views
         private FrameworkElement ElemExtraFilterActive;
         private FrameworkElement ElemSearchActive;
         private ListBox ListGameItems;
-        private ButtonEx ButtonInstall;
         private ButtonEx ButtonPlay;
         private ButtonEx ButtonSearch;
         private ButtonEx ButtonFilter;
@@ -167,7 +165,6 @@ namespace Playnite.FullscreenApp.Controls.Views
             ListGameItems.InputBindings.Add(new GameControllerInputBinding(mainModel.ActivateSelectedCommand, swapStartInput ? confirmInput : ControllerInput.X));
 
             ButtonPlay?.SetResourceReference(ButtonEx.InputHintProperty, swapStartInput ? confirmHint : "ButtonPromptX");
-            ButtonInstall?.SetResourceReference(ButtonEx.InputHintProperty, swapStartInput ? confirmHint : "ButtonPromptX");
             ButtonDetails?.SetResourceReference(ButtonEx.InputHintProperty, swapStartInput ? "ButtonPromptX" : confirmHint);
         }
 
@@ -406,18 +403,6 @@ namespace Playnite.FullscreenApp.Controls.Views
                         nameof(mainModel.GameListFocused));
                 }
 
-                AssignButtonWithCommand(ref ButtonInstall, "PART_ButtonInstall", mainModel.ActivateSelectedCommand);
-                if (ButtonInstall != null)
-                {
-                    BindingTools.SetBinding(
-                        ButtonInstall,
-                        ButtonBase.VisibilityProperty,
-                        mainModel,
-                        $"{nameof(FullscreenAppViewModel.SelectedGame)}.{nameof(GamesCollectionViewEntry.IsInstalled)}",
-                        converter: new InvertedBooleanToVisibilityConverter(),
-                        fallBackValue: Visibility.Collapsed);
-                }
-
                 AssignButtonWithCommand(ref ButtonPlay, "PART_ButtonPlay", mainModel.ActivateSelectedCommand);
                 if (ButtonPlay != null)
                 {
@@ -426,8 +411,8 @@ namespace Playnite.FullscreenApp.Controls.Views
                         ButtonPlay,
                         ButtonBase.VisibilityProperty,
                         mainModel,
-                        $"{nameof(FullscreenAppViewModel.SelectedGame)}.{nameof(GamesCollectionViewEntry.IsInstalled)}",
-                        converter: new Converters.BooleanToVisibilityConverter(),
+                        nameof(FullscreenAppViewModel.SelectedGame),
+                        converter: new NullToVisibilityConverter(),
                         fallBackValue: Visibility.Collapsed);
                 }
 

@@ -166,15 +166,8 @@ namespace Playnite
             CacheIcons();
             var items = new List<SearchItem>();
 
-            // Play/Install
-            if (game.IsInstalled)
-            {
-                items.Add(new SearchItem(LOC.PlayGame, LOC.Activate, () => model.StartGame(game, true), startIcon));
-            }
-            else if (!game.IsCustomGame)
-            {
-                items.Add(new SearchItem(LOC.InstallGame, LOC.Activate, () => model.InstallGame(game), installIcon));
-            }
+            // Play
+            items.Add(new SearchItem(LOC.PlayGame, LOC.Activate, () => model.StartGame(game, true), startIcon));
 
             // Custom Actions
             foreach (var task in game.GameActions?.Where(a => !a.IsPlayAction) ?? Enumerable.Empty<GameAction>())

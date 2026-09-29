@@ -16,12 +16,7 @@ namespace Playnite.DesktopApp.Windows
             this.mainModel = mainModel;
             DataContext = entry;
             Title = entry.DisplayName;
-            PlayButton.IsEnabled = entry.IsInstalled && !entry.IsRunning && !entry.IsLaunching;
-            InstallButton.IsEnabled = !entry.IsInstalled && !entry.IsInstalling;
-            if (entry.IsCustomGame && !entry.IsInstalled)
-            {
-                InstallButton.Content = TryFindResource("LOCEditGame") ?? InstallButton.Content;
-            }
+            PlayButton.IsEnabled = !entry.IsRunning && !entry.IsLaunching && !entry.IsInstalling;
         }
 
         private void PlayButton_Click(object sender, RoutedEventArgs e)
@@ -30,17 +25,5 @@ namespace Playnite.DesktopApp.Windows
             mainModel.StartGameCommand.Execute(entry.Game);
         }
 
-        private void InstallButton_Click(object sender, RoutedEventArgs e)
-        {
-            Close();
-            if (entry.IsCustomGame)
-            {
-                mainModel.EditGameCommand.Execute(entry.Game);
-            }
-            else
-            {
-                mainModel.InstallGameCommand.Execute(entry.Game);
-            }
-        }
     }
 }

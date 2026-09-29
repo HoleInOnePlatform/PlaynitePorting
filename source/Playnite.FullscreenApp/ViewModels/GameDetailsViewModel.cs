@@ -48,11 +48,7 @@ namespace Playnite.FullscreenApp.ViewModels
                 {
                     return resources.GetString("LOCUninstalling");
                 }
-                else if (Game?.IsInstalled == false)
-                {
-                    return resources.GetString("LOCInstallGame");
-                }
-                else if (Game?.IsInstalled == true)
+                else if (Game != null)
                 {
                     return resources.GetString("LOCPlayGame");
                 }
@@ -111,11 +107,7 @@ namespace Playnite.FullscreenApp.ViewModels
                 {
                     CheckExecution();
                 }
-                else if (Game?.IsInstalled == false)
-                {
-                    gamesEditor.InstallGame(Game.Game);
-                }
-                else if (Game?.IsInstalled == true)
+                else if (Game != null)
                 {
                     gamesEditor.PlayGame(Game.Game, true);
                 }

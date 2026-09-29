@@ -62,7 +62,7 @@ namespace Playnite.ViewModels
             switch (actionSettings)
             {
                 case GameSearchItemAction.Play:
-                    return new SearchItemAction(game.IsInstalled ? LOC.PlayGame : LOC.InstallGame, () => mainModel.App.GamesEditor.StartContextAction(game));
+                    return new SearchItemAction(LOC.PlayGame, () => mainModel.App.GamesEditor.StartContextAction(game));
                 case GameSearchItemAction.SwitchTo:
                     return new SearchItemAction(LOC.GameSearchItemActionSwitchTo, () =>
                     {

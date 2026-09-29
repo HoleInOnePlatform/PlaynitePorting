@@ -72,7 +72,7 @@ namespace Playnite
     public class GamesEditor : ObservableObject, IDisposable
     {
         // Replace this with the GameLink session URL when it becomes available.
-        private const string InstantPlayUrl = "about:blank";
+        private const string InstantPlayUrl = "https://www.google.com/";
         private static ILogger logger = LogManager.GetLogger();
         private static bool showedPowerShellError = false;
         private IResourceProvider resources = new ResourceProvider();
@@ -178,14 +178,7 @@ namespace Playnite
 
         public void StartContextAction(Game game)
         {
-            if (game.IsInstalled)
-            {
-                PlayGame(game, true);
-            }
-            else
-            {
-                InstallGame(game);
-            }
+            PlayGame(game, true);
         }
 
         public void PlayGame(Game game, bool launchedFromUI, int actionIndex = -1)

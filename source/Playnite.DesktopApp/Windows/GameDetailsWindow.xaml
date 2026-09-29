@@ -30,17 +30,9 @@
                 <TextBlock Text="{Binding LibraryPlugin.Name}" Foreground="#79B4F2"
                            FontSize="12" Margin="0,4,0,18" />
                 <Grid Height="48">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="10" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Button x:Name="PlayButton" Grid.Column="0" Content="{DynamicResource LOCPlayGame}"
+                    <Button x:Name="PlayButton" Content="{DynamicResource LOCPlayGame}"
                             Background="#1C5BD4" Foreground="White" FontWeight="SemiBold"
                             Click="PlayButton_Click" />
-                    <Button x:Name="InstallButton" Grid.Column="2" Content="{DynamicResource LOCInstallGame}"
-                            Background="#293E57" Foreground="White" FontWeight="SemiBold"
-                            Click="InstallButton_Click" />
                 </Grid>
                 <TextBlock Text="{DynamicResource LOCLastPlayed}" Foreground="#79B4F2"
                            FontSize="12" Margin="0,28,0,3" />
