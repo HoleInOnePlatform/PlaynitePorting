@@ -57,9 +57,12 @@ namespace Playnite.FullscreenApp.ViewModels
             }
         }
 
+        public bool IsLocalInstallAvailable => Game != null && !Game.IsInstalled && !Game.IsInstalling && !Game.IsUninstalling && Game.PluginId != Guid.Empty;
+
         #region Game Commands
 
         public RelayCommand<object> ContextActionCommand { get; private set; }
+        public RelayCommand<object> LocalInstallCommand { get; private set; }
         #endregion
 
         public GameDetailsViewModel(
@@ -93,10 +96,12 @@ namespace Playnite.FullscreenApp.ViewModels
         private void Game_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
             OnPropertyChanged(nameof(ContextActionDescription));
+            OnPropertyChanged(nameof(IsLocalInstallAvailable));
         }
 
         public void InitializeCommands()
         {
+            LocalInstallCommand = new RelayCommand<object>((a) => gamesEditor.ShowDownloadStatus(Game.Game));
             ContextActionCommand = new RelayCommand<object>((a) =>
             {
                 if (Game?.IsInstalling == true || Game?.IsUninstalling == true)

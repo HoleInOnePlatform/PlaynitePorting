@@ -382,11 +382,11 @@ namespace Playnite.DesktopApp.ViewModels
             {
                 if (game != null)
                 {
-                    GamesEditor.InstallGame(game);
+                    GamesEditor.ShowDownloadStatus(game);
                 }
                 else if (SelectedGame != null)
                 {
-                    GamesEditor.InstallGame(SelectedGame.Game);
+                    GamesEditor.ShowDownloadStatus(SelectedGame.Game);
                 }
             });
 

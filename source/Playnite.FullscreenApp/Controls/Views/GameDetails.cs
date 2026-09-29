@@ -23,6 +23,7 @@ namespace Playnite.FullscreenApp.Controls.Views
 {
     [TemplatePart(Name = "PART_ViewHost", Type = typeof(FrameworkElement))]
     [TemplatePart(Name = "PART_ButtonContext", Type = typeof(ButtonBase))]
+    [TemplatePart(Name = "PART_ButtonLocalInstall", Type = typeof(ButtonBase))]
     [TemplatePart(Name = "PART_ButtonOptions", Type = typeof(ButtonBase))]
     [TemplatePart(Name = "PART_ImageCover", Type = typeof(Image))]
     [TemplatePart(Name = "PART_ImageBackground", Type = typeof(FadeImage))]
@@ -33,6 +34,7 @@ namespace Playnite.FullscreenApp.Controls.Views
         private FullscreenAppViewModel mainModel;
         private FrameworkElement ViewHost;
         private ButtonBase ButtonContext;
+        private ButtonBase ButtonLocalInstall;
         private ButtonBase ButtonOptions;
         private Image ImageCover;
         private FadeImage ImageBackground;
@@ -138,6 +140,20 @@ namespace Playnite.FullscreenApp.Controls.Views
                         ButtonBase.ContentProperty,
                         mainModel,
                         $"{nameof(mainModel.SelectedGameDetails)}.{nameof(mainModel.SelectedGameDetails.ContextActionDescription)}");
+                }
+
+                ButtonLocalInstall = Template.FindName("PART_ButtonLocalInstall", this) as ButtonBase;
+                if (ButtonLocalInstall != null)
+                {
+                    BindingTools.SetBinding(ButtonLocalInstall,
+                        ButtonBase.CommandProperty,
+                        mainModel,
+                        $"{nameof(mainModel.SelectedGameDetails)}.{nameof(mainModel.SelectedGameDetails.LocalInstallCommand)}");
+                    BindingTools.SetBinding(ButtonLocalInstall,
+                        ButtonBase.VisibilityProperty,
+                        mainModel,
+                        $"{nameof(mainModel.SelectedGameDetails)}.{nameof(mainModel.SelectedGameDetails.IsLocalInstallAvailable)}",
+                        converter: new Playnite.Converters.BooleanToVisibilityConverter());
                 }
 
                 ButtonOptions = Template.FindName("PART_ButtonOptions", this) as ButtonBase;

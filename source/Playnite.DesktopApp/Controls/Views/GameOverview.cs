@@ -73,6 +73,7 @@ namespace Playnite.DesktopApp.Controls.Views
     [TemplatePart(Name = "PART_ItemsLinks", Type = typeof(ItemsControl))]
     [TemplatePart(Name = "PART_ButtonPlayAction", Type = typeof(Button))]
     [TemplatePart(Name = "PART_ButtonContextAction", Type = typeof(Button))]
+    [TemplatePart(Name = "PART_ButtonLocalInstall", Type = typeof(Button))]
     [TemplatePart(Name = "PART_ButtonMoreActions", Type = typeof(Button))]
     [TemplatePart(Name = "PART_ButtonEditGame", Type = typeof(Button))]
     [TemplatePart(Name = "PART_HtmlDescription", Type = typeof(HtmlTextView))]
@@ -143,6 +144,7 @@ namespace Playnite.DesktopApp.Controls.Views
 
         private Button ButtonPlayAction;
         private Button ButtonContextAction;
+        private Button ButtonLocalInstall;
         private Button ButtonMoreActions;
         private Button ButtonEditGame;
         private HtmlTextView HtmlDescription;
@@ -248,6 +250,18 @@ namespace Playnite.DesktopApp.Controls.Views
                 BindingTools.SetBinding(ButtonContextAction,
                     Button.VisibilityProperty,
                     nameof(GameDetailsViewModel.IsContextAvailable),
+                    converter: new BooleanToVisibilityConverter());
+            }
+
+            ButtonLocalInstall = Template.FindName("PART_ButtonLocalInstall", this) as Button;
+            if (ButtonLocalInstall != null)
+            {
+                BindingTools.SetBinding(ButtonLocalInstall,
+                    Button.CommandProperty,
+                    nameof(GameDetailsViewModel.InstallCommand));
+                BindingTools.SetBinding(ButtonLocalInstall,
+                    Button.VisibilityProperty,
+                    nameof(GameDetailsViewModel.IsInstallAvailable),
                     converter: new BooleanToVisibilityConverter());
             }
 

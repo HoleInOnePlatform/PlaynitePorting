@@ -108,6 +108,9 @@
                             <StackPanel Orientation="Horizontal" DockPanel.Dock="Top">
                                 <ButtonEx x:Name="PART_ButtonContext"
                                           Margin="2" BorderThickness="2" MinWidth="220" HorizontalContentAlignment="Center" />
+                                <ButtonEx x:Name="PART_ButtonLocalInstall"
+                                          Content="{DynamicResource LOCLocalInstallGame}"
+                                          Margin="5,2,2,2" BorderThickness="2" MinWidth="220" HorizontalContentAlignment="Center" />
                                 <ButtonEx x:Name="PART_ButtonOptions"
                                           Content="{DynamicResource LOCGameOptions}"
                                           Margin="5,2,2,2" BorderThickness="2" MinWidth="220" HorizontalContentAlignment="Center" />

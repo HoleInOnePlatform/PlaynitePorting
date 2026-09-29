@@ -181,17 +181,37 @@ namespace Playnite
             PlayGame(game, true);
         }
 
+        public void ShowDownloadStatus(Game game)
+        {
+            var window = new DownloadStatusWindow(game.Name)
+            {
+                Owner = WindowManager.CurrentWindow
+            };
+            window.Show();
+        }
+
         public void PlayGame(Game game, bool launchedFromUI, int actionIndex = -1)
         {
             if (launchedFromUI)
             {
-                using (var webView = Application.PlayniteApiGlobal.WebViews.CreateView(new WebViewSettings
+                var webView = Application.PlayniteApiGlobal.WebViews.CreateView(new WebViewSettings
                 {
                     FullscreenContentOnly = true
-                }))
+                });
+                webView.WindowHost.Owner = null;
+                EventHandler closedHandler = (sender, args) => webView.Dispose();
+                webView.WindowHost.Closed += closedHandler;
+                try
                 {
                     webView.Navigate(InstantPlayUrl);
-                    webView.OpenDialog();
+                    ShowDownloadStatus(game);
+                    webView.Open();
+                }
+                catch
+                {
+                    webView.WindowHost.Closed -= closedHandler;
+                    webView.Dispose();
+                    throw;
                 }
 
                 return;

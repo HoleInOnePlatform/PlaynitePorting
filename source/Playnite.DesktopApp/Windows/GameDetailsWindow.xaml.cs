@@ -17,12 +17,20 @@ namespace Playnite.DesktopApp.Windows
             DataContext = entry;
             Title = entry.DisplayName;
             PlayButton.IsEnabled = !entry.IsRunning && !entry.IsLaunching && !entry.IsInstalling;
+            LocalInstallButton.Visibility = entry.IsInstalled || entry.IsCustomGame ? Visibility.Collapsed : Visibility.Visible;
+            LocalInstallButton.IsEnabled = !entry.IsInstalling && !entry.IsUninstalling;
         }
 
         private void PlayButton_Click(object sender, RoutedEventArgs e)
         {
             Close();
             mainModel.StartGameCommand.Execute(entry.Game);
+        }
+
+        private void LocalInstallButton_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+            mainModel.InstallGameCommand.Execute(entry.Game);
         }
 
     }
