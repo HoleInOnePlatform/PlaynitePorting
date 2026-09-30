@@ -54,7 +54,7 @@ namespace Playnite.GameLink
             Session = new HandoffSession(game.Id, game.GameId ?? game.Id.ToString(), address.SessionId, handoff);
             view.GameLinkMessageReceived += OnMessage;
             view.WindowHost.Closed += OnClosed;
-            Session.LocalReady += OnLocalReady;
+            Session.StateChanged += OnStateChanged;
         }
 
         private void OnMessage(object sender, CefSharp.JavascriptMessageReceivedEventArgs args)
@@ -67,7 +67,11 @@ namespace Playnite.GameLink
             if (args.Message is string json) Session.Receive(json);
         }
 
-        private void OnLocalReady(object sender, EventArgs e) { view.Close(); }
+        private void OnStateChanged(object sender, EventArgs e)
+        {
+            // Temporary flow: a validated ready closes the cloud view without local restoration.
+            if (Session.State == HandoffState.Ready) view.Close();
+        }
         private void OnClosed(object sender, EventArgs e) { Dispose(); }
 
         public void Dispose()
@@ -76,7 +80,7 @@ namespace Playnite.GameLink
             disposed = true;
             view.GameLinkMessageReceived -= OnMessage;
             view.WindowHost.Closed -= OnClosed;
-            Session.LocalReady -= OnLocalReady;
+            Session.StateChanged -= OnStateChanged;
             Session.Dispose();
             view.Dispose();
         }
