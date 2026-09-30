@@ -9,6 +9,18 @@ namespace Playnite.Tests
     [TestFixture]
     public class GameLinkHandoffTests
     {
+        [Test]
+        public void RestSiteSignalHasSeparateStrictContract()
+        {
+            Assert.IsTrue(InstantPlayView.IsRestSiteSignal("{\"type\":\"rest_site_reached\"}"));
+            Assert.IsFalse(InstantPlayView.IsRestSiteSignal("{\"type\":\"handoff.ready\"}"));
+            Assert.IsFalse(InstantPlayView.IsRestSiteSignal("{\"type\":\"rest_site_reached\",\"extra\":1}"));
+            using (var session = new HandoffSession(Guid.NewGuid(), "2868840", Guid.NewGuid().ToString(), new MockHandoff()))
+            {
+                Assert.IsFalse(session.Receive("{\"type\":\"rest_site_reached\"}"));
+                Assert.AreEqual(HandoffState.Playing, session.State);
+            }
+        }
         private sealed class MockHandoff : ILocalHandoff
         {
             public int Calls;

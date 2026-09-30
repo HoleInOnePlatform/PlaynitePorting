@@ -86,6 +86,7 @@ namespace Playnite
         public IInstantPlayAddressProvider InstantPlayAddressProvider { get; set; } = new LoopbackInstantPlayAddressProvider();
         public ILocalHandoff LocalHandoff { get; set; } = new UnavailableLocalHandoff();
         public HandoffSession InstantPlaySession => instantPlayView?.Session;
+        public bool InstantPlayRestSiteReached => instantPlayView?.RestSiteReached ?? false;
 
         public PlayniteApplication Application;
 
@@ -217,7 +218,6 @@ namespace Playnite
             try
             {
                 view.Navigate(address.Url.AbsoluteUri);
-                ShowDownloadStatus(game);
                 view.Open();
             }
             catch

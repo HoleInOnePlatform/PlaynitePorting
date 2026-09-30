@@ -26,6 +26,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\Playnite\GameLink\WebClient\**\*" Exclude="..\Playnite\GameLink\WebClient\node_modules\**">
+      <Link>GameLink\WebClient\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <Resource Include="..\..\references\Fonts\icofont.ttf">
       <Link>Fonts\icofont.ttf</Link>
     </Resource>
