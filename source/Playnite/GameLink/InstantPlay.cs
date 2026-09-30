@@ -5,7 +5,9 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Diagnostics;
+using System.ComponentModel;
 using System.Reflection;
+using System.Text;
 using Newtonsoft.Json.Linq;
 using Playnite.SDK;
 using System.Threading;
@@ -17,7 +19,7 @@ namespace Playnite.GameLink
     {
         public string SessionId { get; set; }
         public Uri Url { get; set; }
-        internal Process Server { get; set; }
+        internal IDisposable Server { get; set; }
     }
 
     public interface IInstantPlayAddressProvider
@@ -50,26 +52,124 @@ namespace Playnite.GameLink
             };
             start.EnvironmentVariables["PORT"] = port.ToString();
             start.EnvironmentVariables["GAMELINK_TOKEN"] = token;
-            var process = Process.Start(start);
-            if (process == null) throw new InvalidOperationException("Could not start the GameLink server. Install Node.js and run npm install in GameLink/WebClient.");
+            Process process = null;
             try
             {
+                try { process = Process.Start(start); }
+                catch (Win32Exception) { }
                 var mock = Environment.GetEnvironmentVariable("GAMELINK_MOCK") == "1" ? "&mock=1" : "";
                 var url = new Uri($"http://127.0.0.1:{port}/?token={token}&sessionId={sessionId}&gameId={Uri.EscapeDataString(game.GameId ?? game.Id.ToString())}{mock}");
-                using (var client = new WebClient())
+                if (process != null)
                 {
-                    var ready = false;
-                    for (var attempt = 0; attempt < 40; attempt++)
+                    using (var client = new WebClient())
                     {
-                        if (process.HasExited) break;
-                        try { client.DownloadString(url); ready = true; break; }
-                        catch (WebException) { Thread.Sleep(100); }
+                        for (var attempt = 0; attempt < 40; attempt++)
+                        {
+                            if (process.HasExited) break;
+                            try { client.DownloadString(url); return new InstantPlayAddress { SessionId = sessionId, Url = url, Server = new ProcessHost(process) }; }
+                            catch (WebException) { Thread.Sleep(100); }
+                        }
                     }
-                    if (!ready) throw new InvalidOperationException("GameLink server did not start. Check Node.js, npm dependencies, and GameLink configuration.");
+                    if (!process.HasExited) process.Kill();
+                    process.Dispose();
+                    process = null;
                 }
-                return new InstantPlayAddress { SessionId = sessionId, Url = url, Server = process };
+                return new InstantPlayAddress { SessionId = sessionId, Url = url, Server = new LoopbackFallbackServer(root, port) };
             }
-            catch { if (!process.HasExited) process.Kill(); process.Dispose(); throw; }
+            catch { if (process != null) { if (!process.HasExited) process.Kill(); process.Dispose(); } throw; }
+        }
+    }
+
+    internal sealed class ProcessHost : IDisposable
+    {
+        private readonly Process process;
+        public ProcessHost(Process process) { this.process = process; }
+        public void Dispose()
+        {
+            try { if (!process.HasExited) process.Kill(); }
+            catch (InvalidOperationException) { }
+            process.Dispose();
+        }
+    }
+
+    // Keeps the bundled page usable for local signal testing when Node.js or its AWS package is absent.
+    internal sealed class LoopbackFallbackServer : IDisposable
+    {
+        private readonly TcpListener listener;
+        private readonly string root;
+        private bool disposed;
+
+        public LoopbackFallbackServer(string root, int port)
+        {
+            this.root = Path.Combine(root, "public");
+            listener = new TcpListener(IPAddress.Loopback, port);
+            listener.Start();
+            _ = ListenAsync();
+        }
+
+        private async Task ListenAsync()
+        {
+            while (!disposed)
+            {
+                TcpClient client;
+                try { client = await listener.AcceptTcpClientAsync(); }
+                catch (SocketException) { break; }
+                catch (ObjectDisposedException) { break; }
+                _ = Task.Run(() => Serve(client));
+            }
+        }
+
+        private void Serve(TcpClient client)
+        {
+            using (client)
+            {
+                try
+                {
+                    client.ReceiveTimeout = 2000;
+                    client.SendTimeout = 2000;
+                    var stream = client.GetStream();
+                    var reader = new StreamReader(stream, Encoding.ASCII, false, 1024, true);
+                    var request = reader.ReadLine()?.Split(' ');
+                    if (request == null || request.Length < 2 || request[0] != "GET") return;
+                    string line;
+                    while (!string.IsNullOrEmpty(line = reader.ReadLine())) { }
+                    var path = request[1].Split('?')[0];
+                    byte[] body;
+                    string contentType;
+                    int status;
+                    if (path == "/api/options")
+                    {
+                        body = Encoding.UTF8.GetBytes("[]");
+                        contentType = "application/json; charset=utf-8";
+                        status = 200;
+                    }
+                    else if (path == "/" || path == "/index.html" || path == "/app.js" || path == "/signal.js" || path == "/style.css")
+                    {
+                        var name = path == "/" ? "index.html" : path.Substring(1);
+                        body = File.ReadAllBytes(Path.Combine(root, name));
+                        contentType = name.EndsWith(".css") ? "text/css; charset=utf-8" : name.EndsWith(".js") ? "text/javascript; charset=utf-8" : "text/html; charset=utf-8";
+                        status = 200;
+                    }
+                    else
+                    {
+                        body = Encoding.UTF8.GetBytes("Not found");
+                        contentType = "text/plain; charset=utf-8";
+                        status = 404;
+                    }
+                    var header = $"HTTP/1.1 {status} {(status == 200 ? "OK" : "Not Found")}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n";
+                    var bytes = Encoding.ASCII.GetBytes(header);
+                    stream.Write(bytes, 0, bytes.Length);
+                    stream.Write(body, 0, body.Length);
+                }
+                catch (IOException) { }
+                catch (ObjectDisposedException) { }
+            }
+        }
+
+        public void Dispose()
+        {
+            disposed = true;
+            listener.Stop();
         }
     }
 
@@ -87,7 +187,7 @@ namespace Playnite.GameLink
         private static readonly ILogger logger = LogManager.GetLogger();
         private readonly WebView.WebView view;
         private readonly Uri origin;
-        private readonly Process server;
+        private readonly IDisposable server;
         private TcpListener localSignalListener;
         private volatile bool disposed;
         public HandoffSession Session { get; }
@@ -212,12 +312,7 @@ namespace Playnite.GameLink
             Session.LocalReady -= OnLocalReady;
             Session.Dispose();
             view.Dispose();
-            if (server != null)
-            {
-                try { if (!server.HasExited) server.Kill(); }
-                catch (InvalidOperationException) { }
-                server.Dispose();
-            }
+            server?.Dispose();
         }
     }
 }

@@ -1,6 +1,6 @@
 # Playnite GameLift Streams client
 
-Playnite starts `server.js` on a random `127.0.0.1` port for each instant-play view and opens its bundled page in the internal WebView. Closing the view stops the server. The page passes only `{"type":"rest_site_reached"}` from the GameLift Streams application message callback to `CefSharp.PostMessage`; Playnite records it on the active view after the existing main-frame and origin checks. It does not change `HandoffSession`, close the view, or start a local game.
+Playnite starts `server.js` on a random `127.0.0.1` port for each instant-play view and opens its bundled page in the internal WebView. If Node.js or the server dependency is unavailable, Playnite serves the page from a built-in loopback fallback so the UI and mock signal remain testable; AWS session start is disabled in that mode. Closing the view stops the server. The page passes only `{"type":"rest_site_reached"}` from the GameLift Streams application message callback to `CefSharp.PostMessage`; Playnite records it on the active view after the existing main-frame and origin checks. It does not change `HandoffSession`, close the view, or start a local game.
 
 ## Inputs required for an AWS stream
 

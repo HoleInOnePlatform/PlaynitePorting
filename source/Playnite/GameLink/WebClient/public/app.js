@@ -30,7 +30,8 @@ try {
   const response = await fetch('/api/options', { headers: { 'X-GameLink-Token': token || '' } });
   const options = await response.json();
   for (const option of options) $('application').add(new Option(option.label, option.index));
-  report(options.length ? '스트림을 시작할 준비가 되었습니다' : '서버에 STREAM_OPTIONS를 설정하세요');
+  if (!options.length) $('start').disabled = true;
+  report(options.length ? '스트림을 시작할 준비가 되었습니다' : '스트림을 시작할 수 없습니다. Node.js, AWS SDK 및 STREAM_OPTIONS 설정을 확인하세요');
 } catch { report('서버 설정을 불러오지 못했습니다'); }
 
 $('start').addEventListener('click', async () => {

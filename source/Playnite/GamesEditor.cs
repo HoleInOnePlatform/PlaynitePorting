@@ -201,7 +201,14 @@ namespace Playnite
                 instantPlayView.Dispose();
             }
 
-            var address = InstantPlayAddressProvider.Create(game);
+            InstantPlayAddress address;
+            try { address = InstantPlayAddressProvider.Create(game); }
+            catch (Exception exc)
+            {
+                logger.Error(exc, "Cannot start instant play: ");
+                Dialogs.ShowErrorMessage("즉시 플레이 페이지를 시작할 수 없습니다. " + exc.Message, LOC.GameError);
+                return;
+            }
             if (address?.Url == null || !Guid.TryParse(address.SessionId, out _) ||
                 !(address.Url.Scheme == Uri.UriSchemeHttps ||
                   (address.Url.Scheme == Uri.UriSchemeHttp && address.Url.IsLoopback)))
