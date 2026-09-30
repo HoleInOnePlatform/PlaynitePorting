@@ -53,6 +53,22 @@ namespace Playnite.Tests
         }
 
         [Test]
+        public void ConfirmedLocalRunClosesOnlyOnce()
+        {
+            var sessionId = Guid.NewGuid().ToString();
+            using (var session = new HandoffSession(Guid.NewGuid(), "2868840", sessionId, new MockHandoff()))
+            {
+                var localReadyCount = 0;
+                session.LocalReady += (_, __) => localReadyCount++;
+                Assert.IsTrue(session.ConfirmLocalRunLoaded());
+                Assert.AreEqual(HandoffState.Local, session.State);
+                Assert.AreEqual(1, localReadyCount);
+                Assert.IsFalse(session.ConfirmLocalRunLoaded());
+                Assert.AreEqual(1, localReadyCount);
+            }
+        }
+
+        [Test]
         public async Task RejectsInvalidEventsAndKeepsCloudOnFailure()
         {
             var sessionId = Guid.NewGuid().ToString();

@@ -6,6 +6,8 @@
 
 현재 소스에는 즉시 플레이 진입, 로컬 설치 상태 UI, GameLink 전환 신호 수신부가 추가되어 있음. 실제 클라우드 세션 및 Save 복원 서비스는 아직 연결되지 않음.
 
+2026-09-30: GameLoader v0.3.0과 연동하는 로컬 런 로드 완료 수신부를 추가함. Slay the Spire 2 (`Game.GameId == "2868840"`)의 즉시 플레이 WebView가 열려 있을 때만 `127.0.0.1:8767` TCP를 수신한다. 게임 모드가 자동 이어하기를 완료하고 실제 런 화면에 진입하면 `GAMELOADER_RUN_LOADED_V1 2868840` 한 줄을 보내며, Playnite는 `OK` 응답 후 세션을 Local로 바꾸고 해당 WebView를 닫는다. 다른 게임·다른 신호는 무시한다. 이것은 전체 Save 복원 서비스의 완료를 뜻하지 않는다.
+
 ```text
 Playnite 원본
   + HoleInOne 브랜드와 전용 UI

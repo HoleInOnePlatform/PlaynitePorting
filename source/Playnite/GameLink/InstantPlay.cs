@@ -1,6 +1,9 @@
 using Playnite.SDK.Models;
 using Playnite.WebView;
 using System;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -44,7 +47,8 @@ namespace Playnite.GameLink
     {
         private readonly WebView.WebView view;
         private readonly Uri origin;
-        private bool disposed;
+        private TcpListener localSignalListener;
+        private volatile bool disposed;
         public HandoffSession Session { get; }
 
         public InstantPlayView(WebView.WebView view, InstantPlayAddress address, Game game, ILocalHandoff handoff)
@@ -54,7 +58,65 @@ namespace Playnite.GameLink
             Session = new HandoffSession(game.Id, game.GameId ?? game.Id.ToString(), address.SessionId, handoff);
             view.GameLinkMessageReceived += OnMessage;
             view.WindowHost.Closed += OnClosed;
-            Session.StateChanged += OnStateChanged;
+            Session.LocalReady += OnLocalReady;
+            StartLocalSignalListener();
+        }
+
+        private void StartLocalSignalListener()
+        {
+            if (Session.ProviderGameId != "2868840") return;
+            // Only the active Slay the Spire 2 instant-play view receives this signal.
+            try
+            {
+                localSignalListener = new TcpListener(IPAddress.Loopback, 8767);
+                localSignalListener.Start();
+                _ = ListenForLocalRunAsync(localSignalListener);
+            }
+            catch (SocketException)
+            {
+                localSignalListener?.Stop();
+                localSignalListener = null;
+            }
+        }
+
+        private async Task ListenForLocalRunAsync(TcpListener listener)
+        {
+            while (!disposed)
+            {
+                TcpClient client;
+                try { client = await listener.AcceptTcpClientAsync(); }
+                catch (SocketException) { break; }
+                catch (ObjectDisposedException) { break; }
+                _ = Task.Run(() => ReceiveLocalRun(client));
+            }
+        }
+
+        private void ReceiveLocalRun(TcpClient client)
+        {
+            using (client)
+            {
+                try
+                {
+                    client.ReceiveTimeout = 1000;
+                    client.SendTimeout = 1000;
+                    using (var reader = new StreamReader(client.GetStream()))
+                    using (var writer = new StreamWriter(client.GetStream()) { AutoFlush = true })
+                    {
+                        var message = reader.ReadLine();
+                        if (disposed || message != "GAMELOADER_RUN_LOADED_V1 2868840" ||
+                            Session.ProviderGameId != "2868840" || Session.State == HandoffState.Closed)
+                        {
+                            writer.WriteLine("IGNORED");
+                            return;
+                        }
+
+                        writer.WriteLine("OK");
+                        Session.ConfirmLocalRunLoaded();
+                    }
+                }
+                catch (IOException) { }
+                catch (ObjectDisposedException) { }
+            }
         }
 
         private void OnMessage(object sender, CefSharp.JavascriptMessageReceivedEventArgs args)
@@ -67,10 +129,9 @@ namespace Playnite.GameLink
             if (args.Message is string json) Session.Receive(json);
         }
 
-        private void OnStateChanged(object sender, EventArgs e)
+        private void OnLocalReady(object sender, EventArgs e)
         {
-            // Temporary flow: a validated ready closes the cloud view without local restoration.
-            if (Session.State == HandoffState.Ready) view.Close();
+            view.Close();
         }
         private void OnClosed(object sender, EventArgs e) { Dispose(); }
 
@@ -78,9 +139,11 @@ namespace Playnite.GameLink
         {
             if (disposed) return;
             disposed = true;
+            localSignalListener?.Stop();
+            localSignalListener = null;
             view.GameLinkMessageReceived -= OnMessage;
             view.WindowHost.Closed -= OnClosed;
-            Session.StateChanged -= OnStateChanged;
+            Session.LocalReady -= OnLocalReady;
             Session.Dispose();
             view.Dispose();
         }

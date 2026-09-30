@@ -121,6 +121,19 @@ namespace Playnite.GameLink
             if (succeeded) LocalReady?.Invoke(this, EventArgs.Empty);
         }
 
+        public bool ConfirmLocalRunLoaded()
+        {
+            lock (sync)
+            {
+                if (disposed || State == HandoffState.Local || State == HandoffState.Closed) return false;
+                State = HandoffState.Local;
+            }
+            logger.Info($"GameLink session {SessionId}, local run loaded");
+            StateChanged?.Invoke(this, EventArgs.Empty);
+            LocalReady?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+
         public void Dispose()
         {
             lock (sync) { if (disposed) return; disposed = true; State = HandoffState.Closed; }
