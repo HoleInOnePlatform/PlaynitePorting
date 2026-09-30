@@ -28,6 +28,7 @@ using Playnite.Scripting.PowerShell;
 using Playnite.Windows;
 using System.Windows.Input;
 using System.Security.Cryptography;
+using Playnite.GameLink;
 
 namespace Playnite
 {
@@ -71,8 +72,6 @@ namespace Playnite
 
     public class GamesEditor : ObservableObject, IDisposable
     {
-        // Replace this with the GameLink session URL when it becomes available.
-        private const string InstantPlayUrl = "https://www.google.com/";
         private static ILogger logger = LogManager.GetLogger();
         private static bool showedPowerShellError = false;
         private IResourceProvider resources = new ResourceProvider();
@@ -83,6 +82,10 @@ namespace Playnite
         private readonly ConcurrentDictionary<Guid, CancellationTokenSource> steamInstallMonitors = new ConcurrentDictionary<Guid, CancellationTokenSource>();
         private readonly IActionSelector actionSelector;
         private bool wasHdrEnabled;
+        private InstantPlayView instantPlayView;
+        public IInstantPlayAddressProvider InstantPlayAddressProvider { get; set; } = new LoopbackInstantPlayAddressProvider();
+        public ILocalHandoff LocalHandoff { get; set; } = new UnavailableLocalHandoff();
+        public HandoffSession InstantPlaySession => instantPlayView?.Session;
 
         public PlayniteApplication Application;
 
@@ -159,6 +162,8 @@ namespace Playnite
 
         public void Dispose()
         {
+            instantPlayView?.Dispose();
+            instantPlayView = null;
             foreach (var monitor in steamInstallMonitors.Values)
             {
                 monitor.Cancel();
@@ -184,7 +189,43 @@ namespace Playnite
 
         public void StartContextAction(Game game)
         {
-            PlayGame(game, true);
+            StartInstantPlay(game);
+        }
+
+        public void StartInstantPlay(Game game)
+        {
+            if (instantPlayView != null && instantPlayView.Session.State != HandoffState.Closed)
+            {
+                if (instantPlayView.Session.GameId == game.Id) return;
+                instantPlayView.Dispose();
+            }
+
+            var address = InstantPlayAddressProvider.Create(game);
+            if (address?.Url == null || !Guid.TryParse(address.SessionId, out _) ||
+                !(address.Url.Scheme == Uri.UriSchemeHttps ||
+                  (address.Url.Scheme == Uri.UriSchemeHttp && address.Url.IsLoopback)))
+                throw new InvalidOperationException("Invalid GameLink session address.");
+
+            var view = Application.PlayniteApiGlobal.WebViews.CreateView(new WebViewSettings
+            {
+                FullscreenContentOnly = true
+            }) as Playnite.WebView.WebView;
+            if (view == null) throw new InvalidOperationException("GameLink requires the internal WebView.");
+            view.WindowHost.Owner = null;
+            var sessionView = new InstantPlayView(view, address, game, LocalHandoff);
+            instantPlayView = sessionView;
+            try
+            {
+                view.Navigate(address.Url.AbsoluteUri);
+                ShowDownloadStatus(game);
+                view.Open();
+            }
+            catch
+            {
+                sessionView.Dispose();
+                instantPlayView = null;
+                throw;
+            }
         }
 
         public void ShowDownloadStatus(Game game)
@@ -210,26 +251,7 @@ namespace Playnite
         {
             if (launchedFromUI)
             {
-                var webView = Application.PlayniteApiGlobal.WebViews.CreateView(new WebViewSettings
-                {
-                    FullscreenContentOnly = true
-                });
-                webView.WindowHost.Owner = null;
-                EventHandler closedHandler = (sender, args) => webView.Dispose();
-                webView.WindowHost.Closed += closedHandler;
-                try
-                {
-                    webView.Navigate(InstantPlayUrl);
-                    ShowDownloadStatus(game);
-                    webView.Open();
-                }
-                catch
-                {
-                    webView.WindowHost.Closed -= closedHandler;
-                    webView.Dispose();
-                    throw;
-                }
-
+                StartInstantPlay(game);
                 return;
             }
 

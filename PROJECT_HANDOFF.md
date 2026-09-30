@@ -4,7 +4,7 @@
 
 이 저장소는 오픈소스 게임 라이브러리·런처인 Playnite를 포크하여, HoleInOne 플랫폼의 GameLink 프론트엔드를 제작하는 프로젝트임.
 
-현재 소스는 Playnite 원본과 동일한 상태이며, 앞으로 기존 기능을 기반으로 HoleInOne 전용 화면과 GameLink 연동 기능을 추가함.
+현재 소스에는 즉시 플레이 진입, 로컬 설치 상태 UI, GameLink 전환 신호 수신부가 추가되어 있음. 실제 클라우드 세션 및 Save 복원 서비스는 아직 연결되지 않음.
 
 ```text
 Playnite 원본
@@ -18,9 +18,9 @@ Playnite 원본
 
 ## 2. 현재 저장소 상태
 
-- Playnite 원본 소스를 포크한 상태임.
-- Playnite 자체 기능과 구조는 원본과 동일함.
-- HoleInOne 또는 GameLink 전용 구현은 아직 추가되지 않음.
+- Playnite 원본을 포크하고 즉시 플레이 진입 및 설치 상태 UI를 추가함.
+- `source/Playnite/GameLink`에 게임 공통 세션 상태와 CefSharp 메시지 수신 경계를 추가함.
+- 세션 주소 공급자와 로컬 Save 복원/전환 계층은 교체 가능한 인터페이스이며 현재 기본 구현은 개발용 localhost 페이지와 실패 응답임.
 - 이 문서는 앞으로 이 저장소에서 구현할 프론트엔드 범위를 정의함.
 - 원본 Playnite의 일반 설명은 `README.md`를 참고함.
 - 기준 브랜치는 `master`, 원격 저장소는 `HoleInOnePlatform/PlaynitePorting`임.
