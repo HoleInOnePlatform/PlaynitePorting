@@ -347,7 +347,11 @@ namespace Playnite.DesktopApp.ViewModels
             EditGameCommand = new RelayCommand<object>((a) => EditGame());
             ContextActionCommand = new RelayCommand<object>((a) =>
             {
-                if (Game?.IsInstalling == true || Game?.IsUninstalling == true)
+                if (Game?.IsInstalling == true)
+                {
+                    editor.ShowDownloadStatus(Game.Game);
+                }
+                else if (Game?.IsUninstalling == true)
                 {
                     CheckSetup();
                 }

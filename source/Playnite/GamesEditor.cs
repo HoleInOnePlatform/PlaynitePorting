@@ -80,6 +80,7 @@ namespace Playnite
         private readonly ConcurrentDictionary<Guid, ClientShutdownJob> shutdownJobs = new ConcurrentDictionary<Guid, ClientShutdownJob>();
         private readonly ConcurrentDictionary<Guid, DateTime> gameStartups = new ConcurrentDictionary<Guid, DateTime>();
         private readonly ConcurrentDictionary<Guid, IPowerShellRuntime> scriptRuntimes = new ConcurrentDictionary<Guid, IPowerShellRuntime>();
+        private readonly ConcurrentDictionary<Guid, CancellationTokenSource> steamInstallMonitors = new ConcurrentDictionary<Guid, CancellationTokenSource>();
         private readonly IActionSelector actionSelector;
         private bool wasHdrEnabled;
 
@@ -158,6 +159,11 @@ namespace Playnite
 
         public void Dispose()
         {
+            foreach (var monitor in steamInstallMonitors.Values)
+            {
+                monitor.Cancel();
+            }
+
             foreach (var controller in controllers.PlayControllers)
             {
                 UpdateGameState(controller.Game.Id, null, false, false, false, false);
@@ -186,6 +192,11 @@ namespace Playnite
             if (!game.IsInstalled && !game.IsInstalling && !game.IsUninstalling)
             {
                 InstallGame(game);
+            }
+
+            if (game.IsInstalling)
+            {
+                StartSteamInstallMonitoring(game);
             }
 
             var window = new DownloadStatusWindow(game)
@@ -1174,6 +1185,7 @@ namespace Playnite
                 controllers.AddController(controller);
                 UpdateGameState(game.Id, null, null, true, null, null);
                 controller.Install(new InstallActionArgs());
+                StartSteamInstallMonitoring(game);
             }
             catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
             {
@@ -1185,6 +1197,93 @@ namespace Playnite
                 {
                     controllers.RemoveController(controller);
                     UpdateGameState(game.Id, null, null, false, null, null);
+                }
+            }
+        }
+
+        private void StartSteamInstallMonitoring(Game game)
+        {
+            BuiltinExtension source;
+            if (!BuiltinExtensions.ExtensionList.TryGetValue(game.PluginId, out source) ||
+                source != BuiltinExtension.SteamLibrary)
+            {
+                return;
+            }
+
+            var cancelSource = new CancellationTokenSource();
+            if (steamInstallMonitors.TryAdd(game.Id, cancelSource))
+            {
+                _ = MonitorSteamInstallAsync(game.Id, game.GameId, cancelSource.Token);
+            }
+            else
+            {
+                cancelSource.Dispose();
+            }
+        }
+
+        private async Task MonitorSteamInstallAsync(Guid id, string steamGameId, CancellationToken token)
+        {
+            var sawDownload = false;
+            var sawManifest = false;
+            var canceledSamples = 0;
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    await Task.Delay(1000, token);
+                    var game = Database.Games.Get(id);
+                    if (game == null || !game.IsInstalling)
+                    {
+                        break;
+                    }
+
+                    SteamInstallSnapshot snapshot;
+                    try
+                    {
+                        snapshot = await Task.Run(() => LocalDownloadStatus.GetSteamSnapshot(steamGameId), token);
+                    }
+                    catch (Exception exc) when (exc is IOException || exc is UnauthorizedAccessException)
+                    {
+                        continue;
+                    }
+
+                    if (snapshot == null)
+                    {
+                        continue;
+                    }
+
+                    sawDownload |= snapshot.IsDownloading;
+                    sawManifest |= snapshot.HasManifest;
+                    if (snapshot.IsInstalled)
+                    {
+                        break;
+                    }
+
+                    var disappeared = (sawDownload || sawManifest) && !snapshot.IsDownloading &&
+                        !snapshot.IsInstalling && (!snapshot.HasManifest || snapshot.IsUninstalled);
+                    canceledSamples = disappeared ? canceledSamples + 1 : 0;
+                    if (canceledSamples >= 5)
+                    {
+                        logger.Info($"Steam installation for {game.GetIdentifierInfo()} was cancelled outside Playnite.");
+                        controllers.RemoveInstallController(id);
+                        UpdateGameState(id, null, null, false, null, null);
+                        break;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception exc)
+            {
+                logger.Error(exc, "Failed to monitor Steam installation.");
+            }
+            finally
+            {
+                CancellationTokenSource monitor;
+                if (steamInstallMonitors.TryRemove(id, out monitor))
+                {
+                    monitor.Dispose();
                 }
             }
         }

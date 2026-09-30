@@ -104,7 +104,11 @@ namespace Playnite.FullscreenApp.ViewModels
             LocalInstallCommand = new RelayCommand<object>((a) => gamesEditor.ShowDownloadStatus(Game.Game));
             ContextActionCommand = new RelayCommand<object>((a) =>
             {
-                if (Game?.IsInstalling == true || Game?.IsUninstalling == true)
+                if (Game?.IsInstalling == true)
+                {
+                    gamesEditor.ShowDownloadStatus(Game.Game);
+                }
+                else if (Game?.IsUninstalling == true)
                 {
                     CheckSetup();
                 }
