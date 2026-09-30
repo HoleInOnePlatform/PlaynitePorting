@@ -183,7 +183,7 @@ namespace Playnite
 
         public void ShowDownloadStatus(Game game)
         {
-            var window = new DownloadStatusWindow(game.Name)
+            var window = new DownloadStatusWindow(game)
             {
                 Owner = WindowManager.CurrentWindow
             };

@@ -51,18 +51,11 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="GameName" Foreground="White" FontSize="13" FontWeight="SemiBold"
                            TextTrimming="CharacterEllipsis" />
-                <TextBlock Grid.Column="1" Text="78%" Foreground="#63A5FF"
+                <TextBlock x:Name="ProgressText" Grid.Column="1" Text="확인 중" Foreground="#63A5FF"
                            FontSize="13" FontWeight="SemiBold" />
             </Grid>
-            <Border Grid.Row="4" Background="#293C54" CornerRadius="6">
-                <Grid ClipToBounds="True">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="78*" />
-                        <ColumnDefinition Width="22*" />
-                    </Grid.ColumnDefinitions>
-                    <Border Grid.Column="0" Background="#2362D3" CornerRadius="6" />
-                </Grid>
-            </Border>
+            <ProgressBar x:Name="DownloadProgress" Grid.Row="4" Minimum="0" Maximum="100"
+                         Value="0" Background="#293C54" Foreground="#2362D3" />
             <Grid Grid.Row="6">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -74,7 +67,7 @@
                 <Button Grid.Column="2" Width="130" Content="저장공간 설정"
                         Style="{StaticResource DownloadActionButton}" />
             </Grid>
-            <TextBlock Grid.Row="8" Text="사용 가능 124 GB" Foreground="#A4BEDF"
+            <TextBlock x:Name="StatusText" Grid.Row="8" Text="로컬 다운로드 상태 확인 중" Foreground="#A4BEDF"
                        FontSize="12" />
         </Grid>
     </Border>
