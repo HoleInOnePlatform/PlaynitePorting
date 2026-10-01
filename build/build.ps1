@@ -127,7 +127,25 @@ if (!$SkipBuild)
 {
     if (Test-Path $OutputDir)
     {
-        Remove-Item "$OutputDir\*" -Recurse -Force
+        $resolvedOutputDir = (Resolve-Path -LiteralPath $OutputDir).ProviderPath
+        $outputPrefix = $resolvedOutputDir.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+        $runningOutputProcesses = @(Get-Process -Name "Playnite*" -ErrorAction SilentlyContinue | Where-Object {
+            $_.Path -and $_.Path.StartsWith($outputPrefix, [StringComparison]::OrdinalIgnoreCase)
+        })
+        if ($runningOutputProcesses.Count -gt 0)
+        {
+            $processDetails = ($runningOutputProcesses | ForEach-Object { "$($_.ProcessName) (PID $($_.Id))" }) -join ', '
+            throw "Close Playnite running from '$resolvedOutputDir' before rebuilding. Running processes: $processDetails."
+        }
+
+        try
+        {
+            Get-ChildItem -LiteralPath $resolvedOutputDir -Force | Remove-Item -Recurse -Force
+        }
+        catch
+        {
+            throw "Could not clean build output '$resolvedOutputDir'. Close Playnite and any other application using files in this directory, then retry. Original error: $($_.Exception.Message)"
+        }
     }
     
     if ($LicensedDependenciesUrl)

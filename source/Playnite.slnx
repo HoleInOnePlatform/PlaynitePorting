@@ -3,6 +3,7 @@
     <Platform Name="x86" />
   </Configurations>
   <Folder Name="/Tests/">
+    <Project Path="Tests/BundledLibraries.Tests/BundledLibraries.Tests.csproj" />
     <Project Path="Tests/Playnite.DesktopApp.Tests/Playnite.DesktopApp.Tests.csproj">
       <Platform Project="x86" />
     </Project>
@@ -46,4 +47,8 @@
     <Platform Project="x86" />
   </Project>
   <Project Path="PlayniteSDK/Playnite.SDK.csproj" />
+  <Folder Name="/BundledLibraries/">
+    <Project Path="SteamLibrary/SteamLibrary.csproj" />
+    <Project Path="EpicLibrary/EpicLibrary.csproj" />
+  </Folder>
 </Solution>

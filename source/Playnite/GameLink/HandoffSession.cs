@@ -1,144 +1,117 @@
 using Newtonsoft.Json.Linq;
+using Playnite.SDK;
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Playnite.SDK;
 
 namespace Playnite.GameLink
 {
     public enum HandoffState { Playing, PointObserved, Ready, Switching, Local, Failed, Cancelled, Closed }
-
-    public interface ILocalHandoff
-    {
-        // Return only after the save is restored and local continuation is confirmed.
-        Task<bool> SwitchAsync(Guid gameId, string handoffId, string artifactId, CancellationToken cancellationToken);
-    }
-
     public sealed class HandoffSession : IDisposable
     {
-        private static readonly ILogger logger = LogManager.GetLogger();
-        private readonly HashSet<string> eventIds = new HashSet<string>(StringComparer.Ordinal);
         private readonly object sync = new object();
-        private readonly ILocalHandoff localHandoff;
-        private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
-        private long lastSequence = -1;
+        private readonly HashSet<string> attempts = new HashSet<string>(StringComparer.Ordinal);
+        private readonly ILocalHandoff local;
+        private CancellationTokenSource attemptCancellation;
+        private long sequence;
+        private string activeAttempt;
         private bool disposed;
-
         public Guid GameId { get; }
         public string ProviderGameId { get; }
         public string SessionId { get; }
         public HandoffState State { get; private set; } = HandoffState.Playing;
+        public bool PointObserved { get; private set; }
         public event EventHandler StateChanged;
         public event EventHandler LocalReady;
-
-        public HandoffSession(Guid gameId, string providerGameId, string sessionId, ILocalHandoff localHandoff)
-        {
-            GameId = gameId;
-            ProviderGameId = providerGameId ?? throw new ArgumentNullException(nameof(providerGameId));
-            SessionId = sessionId ?? throw new ArgumentNullException(nameof(sessionId));
-            this.localHandoff = localHandoff ?? throw new ArgumentNullException(nameof(localHandoff));
-        }
-
+        public HandoffSession(Guid gameId, string providerGameId, string sessionId, ILocalHandoff local)
+        { GameId = gameId; ProviderGameId = providerGameId; SessionId = sessionId; this.local = local; }
         public bool Receive(string json)
         {
-            if (string.IsNullOrEmpty(json) || json.Length > 8192) return false;
-            JObject message;
-            try { message = JObject.Parse(json); }
-            catch { return false; }
-
-            string type, eventId, sessionId, gameId;
-            long sequence;
+            if (string.IsNullOrWhiteSpace(json) || json.Length > 16384) return false;
+            JObject e;
+            try { e = JObject.Parse(json); } catch { return false; }
+            string type; long next; JObject a;
             try
             {
-                if ((int)message["version"] != 1) return false;
-                type = (string)message["type"];
-                eventId = (string)message["eventId"];
-                sessionId = (string)message["sessionId"];
-                gameId = (string)message["gameId"];
-                sequence = (long)message["sequence"];
-                if (!Guid.TryParse(eventId, out _) || !Guid.TryParse(sessionId, out _)) return false;
-                if (!DateTimeOffset.TryParse((string)message["occurredAtUtc"], out _)) return false;
+                type = (string)e["type"]; next = (long)e["sequence"]; a = e["payload"] as JObject;
+                if ((int?)e["version"] != 2 || (string)e["sessionId"] != SessionId || (string)e["gameId"] != ProviderGameId || next <= 0 ||
+                    !Guid.TryParse((string)e["eventId"], out _) || !DateTimeOffset.TryParse((string)e["occurredAtUtc"], out _)) return false;
+                if (type == "handoff.ready" && (a == null || !Guid.TryParse((string)a["id"], out _) ||
+                    !Guid.TryParse((string)a["artifactId"], out _) || a["expires"]?.Type != JTokenType.Integer ||
+                    !(a["identity"] is JObject) || string.IsNullOrEmpty((string)a["generation"]))) return false;
+                if (type != "handoff.point.reached" && type != "handoff.ready" && type != "handoff.failed" && type != "handoff.cancelled" &&
+                    type != "handoff.prepare" && type != "handoff.frozen" && type != "local.restore.completed" &&
+                    type != "handoff.committed" && type != "stream.terminated") return false;
             }
             catch { return false; }
-            if (sessionId != SessionId || gameId != ProviderGameId || sequence < 0) return false;
-            if (type != "handoff.point.reached" && type != "handoff.ready" &&
-                type != "handoff.failed" && type != "handoff.cancelled") return false;
-
-            string handoffId = null, artifactId = null;
-            try
+            var start = false; CancellationToken token = default;
+            lock (sync)
             {
-                if (type == "handoff.ready")
+                if (disposed || State == HandoffState.Closed) return false;
+                if (next <= sequence) return true;
+                sequence = next;
+                if (State == HandoffState.Local) return true;
+                if (type == "handoff.ready" && (long)a["expires"] <= DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) return true;
+                if (type == "handoff.point.reached") { PointObserved = true; if (State == HandoffState.Playing) State = HandoffState.PointObserved; }
+                else if (type == "handoff.ready")
                 {
-                    var payload = message["payload"] as JObject;
-                    handoffId = (string)payload?["handoffId"];
-                    artifactId = (string)payload?["artifactId"];
-                    if (!Guid.TryParse(handoffId, out _) || string.IsNullOrWhiteSpace(artifactId)) return false;
+                    var id = (string)a["id"];
+                    if (attempts.Add(id))
+                    {
+                        attemptCancellation?.Cancel(); attemptCancellation?.Dispose();
+                        attemptCancellation = new CancellationTokenSource(); token = attemptCancellation.Token;
+                        activeAttempt = id; State = HandoffState.Switching; start = true;
+                    }
+                }
+                else if (type == "handoff.failed" || type == "handoff.cancelled")
+                {
+                    if (activeAttempt == null || (string)a?["id"] == activeAttempt)
+                    { attemptCancellation?.Cancel(); State = type == "handoff.failed" ? HandoffState.Failed : HandoffState.Cancelled; }
                 }
             }
-            catch { return false; }
-
-            lock (sync)
-            {
-                if (disposed || sequence <= lastSequence || !eventIds.Add(eventId) ||
-                    State == HandoffState.Switching || State == HandoffState.Local ||
-                    State == HandoffState.Closed) return false;
-                lastSequence = sequence;
-                if (type == "handoff.point.reached") State = HandoffState.PointObserved;
-                else if (type == "handoff.ready") State = HandoffState.Ready;
-                else State = type == "handoff.failed" ? HandoffState.Failed : HandoffState.Cancelled;
-            }
-            logger.Info($"GameLink session {SessionId}, event {eventId}, state {State}");
             StateChanged?.Invoke(this, EventArgs.Empty);
-            if (type == "handoff.ready") _ = SwitchAsync(handoffId, artifactId);
+            if (start) _ = SwitchAsync(a, token);
             return true;
         }
-
-        private async Task SwitchAsync(string handoffId, string artifactId)
+        public void RestoreSnapshot(JObject snapshot)
         {
+            if ((string)snapshot["id"] != SessionId || (string)snapshot["gameId"] != ProviderGameId) throw new ArgumentException("Snapshot session mismatch.");
+            JObject attempt = null; CancellationToken token = default; bool completed = false;
             lock (sync)
             {
-                if (disposed || State != HandoffState.Ready) return;
-                State = HandoffState.Switching;
+                if (disposed || State == HandoffState.Local) return;
+                sequence = Math.Max(sequence, (long?)snapshot["cursor"] ?? 0);
+                if ((string)snapshot["state"] == "Committed") { State = HandoffState.Local; completed = true; }
+                else if ((string)snapshot["state"] == "ArtifactReady" && snapshot["attempt"] is JObject a && attempts.Add((string)a["id"]))
+                {
+                    if ((long?)a["expires"] <= DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) return;
+                    attempt = (JObject)a.DeepClone(); activeAttempt = (string)a["id"];
+                    attemptCancellation = new CancellationTokenSource(); token = attemptCancellation.Token; State = HandoffState.Switching;
+                }
+                else if ((string)snapshot["state"] == "Failed") State = HandoffState.Failed;
+                else if ((string)snapshot["state"] == "Cancelled") State = HandoffState.Cancelled;
             }
             StateChanged?.Invoke(this, EventArgs.Empty);
-            bool succeeded = false;
-            try
-            {
-                var switchTask = localHandoff.SwitchAsync(GameId, handoffId, artifactId, cancellation.Token);
-                var finished = await Task.WhenAny(switchTask, Task.Delay(TimeSpan.FromMinutes(2), cancellation.Token));
-                if (finished == switchTask) succeeded = await switchTask;
-            }
-            catch (OperationCanceledException) { }
-            catch { }
-            lock (sync)
-            {
-                if (disposed) return;
-                State = succeeded ? HandoffState.Local : HandoffState.Failed;
-            }
-            logger.Info($"GameLink session {SessionId}, state {State}");
-            StateChanged?.Invoke(this, EventArgs.Empty);
-            if (succeeded) LocalReady?.Invoke(this, EventArgs.Empty);
+            if (completed) LocalReady?.Invoke(this, EventArgs.Empty);
+            if (attempt != null) _ = SwitchAsync(attempt, token);
         }
-
-        public bool ConfirmLocalRunLoaded()
+        private async Task SwitchAsync(JObject attempt, CancellationToken token)
         {
+            bool success;
+            try { success = await local.SwitchAsync(GameId, (JObject)attempt.DeepClone(), token).ConfigureAwait(false); }
+            catch { success = false; }
             lock (sync)
             {
-                if (disposed || State == HandoffState.Local || State == HandoffState.Closed) return false;
-                State = HandoffState.Local;
+                if (disposed || token.IsCancellationRequested || activeAttempt != (string)attempt["id"] || State != HandoffState.Switching) return;
+                State = success ? HandoffState.Local : HandoffState.Failed;
             }
-            logger.Info($"GameLink session {SessionId}, local run loaded");
             StateChanged?.Invoke(this, EventArgs.Empty);
-            LocalReady?.Invoke(this, EventArgs.Empty);
-            return true;
+            if (success) LocalReady?.Invoke(this, EventArgs.Empty);
         }
-
         public void Dispose()
         {
-            lock (sync) { if (disposed) return; disposed = true; State = HandoffState.Closed; }
-            cancellation.Cancel();
-            cancellation.Dispose();
+            lock (sync) { if (disposed) return; disposed = true; State = HandoffState.Closed; attemptCancellation?.Cancel(); }
             StateChanged?.Invoke(this, EventArgs.Empty);
         }
     }

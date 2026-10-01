@@ -191,6 +191,41 @@ namespace Playnite.DesktopApp.ViewModels
         {
             if (SelectedIndex == Pages.Intro)
             {
+                // Bundled integrations can be configured without the add-on service.
+                var bundledLibraries = ExtensionFactory.GetInstalledManifests()
+                    .Where(a => a.Id == "SteamLibrary_Builtin" || a.Id == "EpicGamesLibrary_Builtin").ToList();
+                if (bundledLibraries.HasItems())
+                {
+                    if (extensions.Plugins.Count == 0)
+                    {
+                        extensions.LoadPlugins(null, false, null);
+                    }
+
+                    foreach (var lib in extensions.LibraryPlugins.Where(a =>
+                        bundledLibraries.Any(b => b.Id == extensions.Plugins[a.Id].Description.Id)))
+                    {
+                        var settings = lib.GetSettings(true);
+                        var view = lib.GetSettingsView(true);
+                        if (settings != null && view != null)
+                        {
+                            selectedPlugins.Add(new PluginSettingsItem
+                            {
+                                Name = lib.Name,
+                                View = view,
+                                Settings = settings,
+                                Icon = lib.LibraryIcon
+                            });
+                        }
+                    }
+
+                    SelectedIndex = selectedPlugins.HasItems() ? Pages.ProviderConfig : Pages.Finish;
+                    if (selectedPlugins.HasItems())
+                    {
+                        SetPluginConfiguration(selectedPlugins[0]);
+                    }
+                    return;
+                }
+
                 var listDownRes = dialogs.ActivateGlobalProgress((prg) =>
                 {
                     recommendedExtensions = backendClient.GetDefaultExtensions();

@@ -305,13 +305,10 @@ namespace Playnite.Metadata
 
         public static MetadataDownloaderSettings GetDefaultSettings()
         {
-            var igdbPluginId = BuiltinExtensions.GetIdFromExtension(BuiltinExtension.IgdbMetadata);
             var settings = new MetadataDownloaderSettings();
-            settings.ConfigureFields(new List<Guid> { igdbPluginId }, true);
-            settings.Description.Sources = new List<Guid> { Guid.Empty, igdbPluginId };
-            settings.Icon.Sources = new List<Guid> { Guid.Empty, igdbPluginId };
-            settings.BackgroundImage.Sources = new List<Guid> { Guid.Empty, igdbPluginId };
-            settings.CoverImage.Sources = new List<Guid> { igdbPluginId, Guid.Empty };
+            // Guid.Empty selects the game's own library metadata provider.
+            // Steam and Epic are bundled; IGDB is not required for the MVP.
+            settings.ConfigureFields(new List<Guid> { Guid.Empty }, true);
             settings.Name.Import = false;
             return settings;
         }

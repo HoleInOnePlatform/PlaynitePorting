@@ -21,6 +21,9 @@
     <InternalsVisibleTo Include="Playnite.FullscreenApp.Tests" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Playnite.BrowserProcess\Playnite.BrowserProcess.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\SteamLibrary\SteamLibrary.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\EpicLibrary\EpicLibrary.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\PlayniteSDK\Playnite.SDK.csproj" />
     <ProjectReference Include="..\Playnite\Playnite.csproj" />
   </ItemGroup>
@@ -70,6 +73,6 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <PostBuildEvent>SETX PLAYNITE_SLN $(SolutionDir)</PostBuildEvent>
+    <PostBuildEvent Condition="'$(SolutionDir)' != ''">SETX PLAYNITE_SLN $(SolutionDir)</PostBuildEvent>
   </PropertyGroup>
 </Project>

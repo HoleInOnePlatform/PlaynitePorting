@@ -1,7 +1,6 @@
 {
-  "name": "gamelink-stream-client",
+  "name": "holeinone-stream-static",
   "private": true,
   "type": "module",
-  "scripts": {"start": "node server.js", "test": "node --test"},
-  "dependencies": {"@aws-sdk/client-gameliftstreams": "^3.0.0"}
+  "scripts": { "test": "node --test static.test.js" }
 }

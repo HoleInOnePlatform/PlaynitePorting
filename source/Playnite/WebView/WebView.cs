@@ -1,4 +1,4 @@
-﻿using CefSharp;
+using CefSharp;
 using Playnite.Windows;
 using Playnite.SDK;
 using System;
@@ -25,7 +25,6 @@ namespace Playnite.WebView
 
         public bool CanExecuteJavascriptInMainFrame => window.Browser.CanExecuteJavascriptInMainFrame;
         public event EventHandler NavigationChanged;
-        internal event EventHandler<JavascriptMessageReceivedEventArgs> GameLinkMessageReceived;
         public event EventHandler<WebViewLoadingChangedEventArgs> LoadingChanged;
         public Window WindowHost => window;
 
@@ -36,7 +35,6 @@ namespace Playnite.WebView
             this.settings = settings;
             window.Browser.LoadingStateChanged += Browser_LoadingStateChanged;
             window.Browser.TitleChanged += Browser_TitleChanged;
-            window.Browser.JavascriptMessageReceived += Browser_JavascriptMessageReceived;
 
             if (!settings.UserAgent.IsNullOrWhiteSpace() || settings.ResourceLoadedCallback != null)
             {
@@ -95,12 +93,6 @@ namespace Playnite.WebView
             window.Title = string.IsNullOrEmpty(titlePrefix) ? titleSuffix : string.Format("{0} - {1}", titlePrefix, titleSuffix);
         }
 
-        private void Browser_JavascriptMessageReceived(object sender, JavascriptMessageReceivedEventArgs args)
-        {
-            // Only GameLink views attach a handler. Frame provenance is checked by the caller.
-            context.Post(_ => GameLinkMessageReceived?.Invoke(this, args), null);
-        }
-
         public void Close()
         {
             context.Send(a => window.Close(), null);
@@ -110,7 +102,6 @@ namespace Playnite.WebView
         {
             window.Browser.LoadingStateChanged -= Browser_LoadingStateChanged;
             window.Browser.TitleChanged -= Browser_TitleChanged;
-            window.Browser.JavascriptMessageReceived -= Browser_JavascriptMessageReceived;
             window.Browser.IsBrowserInitializedChanged -= Browser_IsBrowserInitializedChanged;
             window.Close();
             window.Browser.Dispose();

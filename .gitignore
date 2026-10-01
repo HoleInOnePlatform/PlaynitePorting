@@ -283,3 +283,16 @@ source/Playnite.FullscreenApp/Themes/Fullscreen/Default/audio/*
 
 source/Playnite.Deps/include/*
 source/Playnite.Deps/include_native_x86/*
+
+# Local hosted stream access token
+source/Playnite/GameLink/hosted-stream.local.txt
+
+# Regenerable historical/check outputs; preserve on disk for user-data review.
+WebFront/dist/
+dist/
+build/BundledOutputCheck/
+build/LocalLaunchCheck/
+build/PortableVerify-*/
+build/WebViewFix/
+build/webview-check.err
+build/webview-check.out

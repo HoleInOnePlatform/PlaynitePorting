@@ -1,100 +1,49 @@
 using NUnit.Framework;
 using Playnite.GameLink;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-
 namespace Playnite.Tests
 {
     [TestFixture]
     public class GameLinkHandoffTests
     {
+        private sealed class Pending : ILocalHandoff
+        {
+            public int Calls; public CancellationToken Token; public TaskCompletionSource<bool> Result = new TaskCompletionSource<bool>();
+            public Task<bool> SwitchAsync(Guid game, JObject attempt, CancellationToken token) { Calls++; Token = token; return Result.Task; }
+        }
+        private static JObject Attempt() => new JObject { ["id"] = Guid.NewGuid().ToString(), ["artifactId"] = Guid.NewGuid().ToString(), ["generation"] = "gen",
+            ["identity"] = new JObject { ["profileId"] = 1, ["runId"] = "123:seed", ["checkpoint"] = "0:1,2" }, ["expires"] = DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeMilliseconds() };
+        private static string Event(string session, long seq, string type, JObject attempt) => new JObject { ["version"] = 2,
+            ["eventId"] = Guid.NewGuid().ToString(), ["sessionId"] = session, ["gameId"] = "2868840", ["sequence"] = seq,
+            ["occurredAtUtc"] = DateTimeOffset.UtcNow.ToString("o"), ["type"] = type, ["payload"] = attempt }.ToString();
         [Test]
-        public void RestSiteSignalHasSeparateStrictContract()
+        public async Task CandidateCannotLaunchAndDuplicateReadyHasOneEffect()
         {
-            Assert.IsTrue(InstantPlayView.IsRestSiteSignal("{\"type\":\"rest_site_reached\"}"));
-            Assert.IsFalse(InstantPlayView.IsRestSiteSignal("{\"type\":\"handoff.ready\"}"));
-            Assert.IsFalse(InstantPlayView.IsRestSiteSignal("{\"type\":\"rest_site_reached\",\"extra\":1}"));
-            using (var session = new HandoffSession(Guid.NewGuid(), "2868840", Guid.NewGuid().ToString(), new MockHandoff()))
-            {
-                Assert.IsFalse(session.Receive("{\"type\":\"rest_site_reached\"}"));
-                Assert.AreEqual(HandoffState.Playing, session.State);
+            var id = Guid.NewGuid().ToString(); var local = new Pending(); var a = Attempt();
+            using (var s = new HandoffSession(Guid.NewGuid(), "2868840", id, local)) {
+                Assert.IsTrue(s.Receive(Event(id, 1, "handoff.point.reached", a))); Assert.AreEqual(0, local.Calls);
+                Assert.IsTrue(s.Receive(Event(id, 3, "handoff.ready", a))); Assert.IsTrue(s.Receive(Event(id, 6, "handoff.ready", a))); Assert.AreEqual(1, local.Calls);
+                local.Result.SetResult(true); await Task.Delay(10); Assert.AreEqual(HandoffState.Local, s.State);
             }
         }
-        private sealed class MockHandoff : ILocalHandoff
-        {
-            public int Calls;
-            public bool Result;
-            public Task<bool> SwitchAsync(Guid gameId, string handoffId, string artifactId, CancellationToken token)
-            {
-                Calls++;
-                return Task.FromResult(Result);
-            }
-        }
-
-        private static string Event(string type, string session, string game, long sequence, string eventId = null)
-        {
-            return Newtonsoft.Json.JsonConvert.SerializeObject(new
-            {
-                version = 1, type, eventId = eventId ?? Guid.NewGuid().ToString(),
-                sessionId = session, gameId = game, sequence,
-                occurredAtUtc = DateTime.UtcNow.ToString("o"),
-                payload = new { handoffId = Guid.NewGuid().ToString(), artifactId = "opaque" }
-            });
-        }
-
-        [TestCase("provider:first")]
-        [TestCase("provider:second")]
-        public async Task ReadyRunsOneSwitchForAnyGame(string game)
-        {
-            var sessionId = Guid.NewGuid().ToString();
-            var mock = new MockHandoff { Result = true };
-            using (var session = new HandoffSession(Guid.NewGuid(), game, sessionId, mock))
-            {
-                Assert.IsTrue(session.Receive(Event("handoff.point.reached", sessionId, game, 1)));
-                Assert.AreEqual(0, mock.Calls);
-                var ready = Event("handoff.ready", sessionId, game, 2);
-                Assert.IsTrue(session.Receive(ready));
-                await Task.Delay(10);
-                Assert.AreEqual(1, mock.Calls);
-                Assert.AreEqual(HandoffState.Local, session.State);
-                Assert.IsFalse(session.Receive(ready));
-                Assert.IsFalse(session.Receive(Event("handoff.ready", sessionId, game, 1)));
-                Assert.AreEqual(1, mock.Calls);
-            }
-        }
-
         [Test]
-        public void ConfirmedLocalRunClosesOnlyOnce()
+        public async Task CancellationDuringSwitchRejectsLateCompletion()
         {
-            var sessionId = Guid.NewGuid().ToString();
-            using (var session = new HandoffSession(Guid.NewGuid(), "2868840", sessionId, new MockHandoff()))
-            {
-                var localReadyCount = 0;
-                session.LocalReady += (_, __) => localReadyCount++;
-                Assert.IsTrue(session.ConfirmLocalRunLoaded());
-                Assert.AreEqual(HandoffState.Local, session.State);
-                Assert.AreEqual(1, localReadyCount);
-                Assert.IsFalse(session.ConfirmLocalRunLoaded());
-                Assert.AreEqual(1, localReadyCount);
+            var id = Guid.NewGuid().ToString(); var local = new Pending(); var a = Attempt();
+            using (var s = new HandoffSession(Guid.NewGuid(), "2868840", id, local)) {
+                s.Receive(Event(id, 1, "handoff.ready", a)); s.Receive(Event(id, 2, "handoff.cancelled", a)); Assert.IsTrue(local.Token.IsCancellationRequested);
+                local.Result.SetResult(true); await Task.Delay(10); Assert.AreEqual(HandoffState.Cancelled, s.State);
             }
         }
-
         [Test]
-        public async Task RejectsInvalidEventsAndKeepsCloudOnFailure()
+        public void AnotherSessionAndLegacyBridgeAreRejected()
         {
-            var sessionId = Guid.NewGuid().ToString();
-            var mock = new MockHandoff();
-            using (var session = new HandoffSession(Guid.NewGuid(), "provider:game", sessionId, mock))
-            {
-                Assert.IsFalse(session.Receive("not json"));
-                Assert.IsFalse(session.Receive(Event("handoff.ready", Guid.NewGuid().ToString(), "provider:game", 1)));
-                Assert.IsFalse(session.Receive(Event("handoff.ready", sessionId, "other", 1)));
-                Assert.IsFalse(session.Receive(Event("unknown", sessionId, "provider:game", 1)));
-                Assert.IsTrue(session.Receive(Event("handoff.ready", sessionId, "provider:game", 1)));
-                await Task.Delay(10);
-                Assert.AreEqual(HandoffState.Failed, session.State);
-                Assert.AreEqual(1, mock.Calls);
+            var id = Guid.NewGuid().ToString(); using (var s = new HandoffSession(Guid.NewGuid(), "2868840", id, new Pending())) {
+                Assert.IsFalse(s.Receive(Event(Guid.NewGuid().ToString(), 1, "handoff.ready", Attempt())));
+                Assert.IsFalse(s.Receive("{\"type\":\"rest_site_reached\"}")); Assert.IsFalse(s.Receive("invalid")); Assert.AreEqual(HandoffState.Playing, s.State);
             }
         }
     }

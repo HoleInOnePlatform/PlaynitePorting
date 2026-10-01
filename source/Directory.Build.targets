@@ -1,0 +1,30 @@
+<Project>
+  <Target Name="CopyBundledLibraries" AfterTargets="Build"
+          Condition="'$(MSBuildProjectName)' == 'Playnite.DesktopApp' Or '$(MSBuildProjectName)' == 'Playnite.FullscreenApp'">
+    <ItemGroup>
+      <BundledSteam Include="$(MSBuildThisFileDirectory)SteamLibrary\bin\$(Configuration)\**\*"
+                    Exclude="$(MSBuildThisFileDirectory)SteamLibrary\bin\$(Configuration)\Playnite.SDK.*;$(MSBuildThisFileDirectory)SteamLibrary\bin\$(Configuration)\**\*.pdb" />
+      <BundledEpic Include="$(MSBuildThisFileDirectory)EpicLibrary\bin\$(Configuration)\**\*"
+                   Exclude="$(MSBuildThisFileDirectory)EpicLibrary\bin\$(Configuration)\Playnite.SDK.*;$(MSBuildThisFileDirectory)EpicLibrary\bin\$(Configuration)\**\*.pdb" />
+    </ItemGroup>
+    <Error Condition="!Exists('$(MSBuildThisFileDirectory)SteamLibrary\bin\$(Configuration)\SteamLibrary.dll')" Text="Bundled Steam library was not built." />
+    <Error Condition="!Exists('$(MSBuildThisFileDirectory)EpicLibrary\bin\$(Configuration)\EpicLibrary.dll')" Text="Bundled Epic library was not built." />
+    <Copy SourceFiles="@(BundledSteam)" DestinationFiles="@(BundledSteam->'$(TargetDir)Extensions\SteamLibrary_Builtin\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(BundledEpic)" DestinationFiles="@(BundledEpic->'$(TargetDir)Extensions\EpicLibrary_Builtin\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+  <!-- General CefSharp views require Playnite's custom subprocess, including on cold startup. -->
+  <Target Name="CopyPlayniteBrowserProcess" AfterTargets="Build"
+          Condition="'$(MSBuildProjectName)' == 'Playnite.DesktopApp' Or '$(MSBuildProjectName)' == 'Playnite.FullscreenApp'">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)Playnite.BrowserProcess\Playnite.BrowserProcess.csproj"
+             Targets="GetTargetPath" Properties="Configuration=$(Configuration);Platform=$(Platform)">
+      <Output TaskParameter="TargetOutputs" ItemName="PlayniteBrowserProcessTarget" />
+    </MSBuild>
+    <Error Condition="'@(PlayniteBrowserProcessTarget)' == ''" Text="Playnite browser subprocess target was not resolved." />
+    <Error Condition="!Exists('%(PlayniteBrowserProcessTarget.Identity)')" Text="Playnite browser subprocess was not built: %(PlayniteBrowserProcessTarget.Identity)" />
+    <ItemGroup>
+      <PlayniteBrowserProcessFiles Include="@(PlayniteBrowserProcessTarget)" />
+      <PlayniteBrowserProcessFiles Include="@(PlayniteBrowserProcessTarget->'%(Identity).config')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PlayniteBrowserProcessFiles)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

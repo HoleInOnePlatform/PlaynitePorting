@@ -1,0 +1,427 @@
+using Playnite.SDK;
+using Playnite.SDK.Models;
+using SteamKit2;
+using SteamLibrary.Models;
+using SteamLibrary.Services.Base;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+
+namespace SteamLibrary.Services
+{
+    public class SteamServiceAggregator
+    {
+        private readonly PlayerService playerService;
+        private readonly SteamStoreService storeService;
+        private readonly ClientCommService clientCommService;
+        private readonly FamilyGroupsService familyGroupsService;
+        private readonly ParentalService parentalService;
+        private readonly IPlayniteAPI playniteApi;
+        private readonly SteamLibrary plugin;
+        private readonly ILogger logger = LogManager.GetLogger();
+        private static readonly Regex steamItemPattern = new Regex(@"^(.*):\s*https://store.steampowered.com/app/(\d+)$", RegexOptions.Compiled);
+
+        public SteamServiceAggregator(PlayerService playerService, SteamStoreService storeService, ClientCommService clientCommService, FamilyGroupsService familyGroupsService, ParentalService parentalService, SteamLibrary plugin)
+        {
+            this.playerService = playerService;
+            this.storeService = storeService;
+            this.clientCommService = clientCommService;
+            this.familyGroupsService = familyGroupsService;
+            this.parentalService = parentalService;
+            this.playniteApi = plugin.PlayniteApi;
+            this.plugin = plugin;
+        }
+
+        public async Task<IEnumerable<GameMetadata>> GetGamesAsync(SteamLibrarySettings settings)
+        {
+            var installedGameIds = new HashSet<string>();
+
+            var allGames = new Dictionary<string, GameMetadata>();
+            Exception importError = null;
+
+            bool AddGame(GameMetadata game, bool overwriteName = false, bool familySharingGame = false)
+            {
+                bool gameAlreadyInImport = allGames.TryGetValue(game.GameId, out var existingGame);
+
+                // If importing family shared games is disabled, skip uninstalled games (installed games will already have been added to `allGames`)
+                // This way installed family sharing games still get the appropriate source set
+                bool gameIsInstalled = gameAlreadyInImport && existingGame.IsInstalled;
+                if (familySharingGame && !settings.ImportFamilySharedGames && !gameIsInstalled)
+                    return false;
+
+                if (gameAlreadyInImport)
+                {
+                    if (overwriteName)
+                        existingGame.Name = game.Name;
+
+                    if (existingGame.Playtime == 0)
+                        existingGame.Playtime = game.Playtime;
+
+                    existingGame.InstallSize ??= game.InstallSize;
+                    existingGame.LastActivity ??= game.LastActivity;
+                    existingGame.Source ??= game.Source;
+                }
+                else
+                {
+                    allGames.Add(game.GameId, game);
+                }
+
+                return true;
+            }
+
+            bool TryAddGames(Func<IEnumerable<GameMetadata>> getGamesFunc, string importSource, HashSet<string> gameIdsOutput = null, bool overwriteName = false, bool familySharingGames = false)
+            {
+                try
+                {
+                    var games = getGamesFunc().ToList();
+                    logger.Info($"Found {games.Count} {importSource} Steam games.");
+
+                    foreach (var game in games)
+                        if (AddGame(game, overwriteName, familySharingGames) && gameIdsOutput != null)
+                            gameIdsOutput.Add(game.GameId);
+
+                    return games.Count > 0;
+                }
+                catch (Exception e)
+                {
+                    logger.Error(e, $"Failed to import {importSource} Steam games.");
+                    importError = e;
+                    return false;
+                }
+            }
+
+            void TryAddPlayTimes(Func<IEnumerable<ClientPlaytime>> getPlayTimesFunc, string importSource)
+            {
+                try
+                {
+                    var playTimes = getPlayTimesFunc().ToList();
+                    logger.Info($"Found {playTimes.Count} {importSource} Steam play times.");
+
+                    Dictionary<string, List<Game>> libraryGames = playniteApi.Database.Games.Where(g => g.PluginId == plugin.Id)
+                                                                             .GroupBy(g => g.GameId)
+                                                                             .ToDictionary(gr => gr.Key, gr => gr.ToList());
+
+                    foreach (var playtime in playTimes)
+                    {
+                        string idStr = playtime.appid.ToString();
+                        ulong playtimeSeconds = (playtime.playtime_forever + playtime.playtime_disconnected) * 60;
+                        var lastPlayed = SteamApiServiceBase.GetLastPlayedDateTime(playtime.last_playtime);
+
+                        if (allGames.TryGetValue(idStr, out var game))
+                        {
+                            if (game.Playtime < playtimeSeconds)
+                                game.Playtime = playtimeSeconds;
+
+                            if (game.LastActivity == null || game.LastActivity < lastPlayed)
+                                game.LastActivity = lastPlayed;
+                        }
+                        else  if (libraryGames.TryGetValue(idStr, out var libraryGamesWithThisId))
+                        {
+                            // Add games to import result as a way to potentially update their playtimes
+                            // We don't add these for games that aren't already in the Playnite library because that would include demos and refunded games
+                            var playtimeGame = new GameMetadata
+                            {
+                                GameId = idStr,
+                                Name = libraryGamesWithThisId.FirstOrDefault()?.Name,
+                                Playtime = playtimeSeconds,
+                                LastActivity = lastPlayed,
+                                Source = new MetadataNameProperty(SourceNames.PlaytimeOnly),
+                            };
+                            AddGame(playtimeGame);
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    logger.Error(e, $"Failed to get/set play times for {importSource} Steam games.");
+                }
+            }
+
+            if (settings.ImportInstalledGames)
+                TryAddGames(() => SteamLocalService.GetInstalledGames().Values, "Installed", installedGameIds);
+
+            if (settings.ConnectAccount)
+            {
+                var onlineLibraryGameIds = new HashSet<string>();
+                var familySharingUserIds = new HashSet<string>();
+
+                if (settings.IsPrivateAccount)
+                {
+                    if (settings.UserId.IsNullOrEmpty())
+                    {
+                        throw new Exception(playniteApi.Resources.GetString(LOC.SteamNotLoggedInError));
+                    }
+
+                    TryAddGames(() => playerService.GetOwnedGamesApiKey(settings, ulong.Parse(settings.UserId), settings.RuntimeApiKey, settings.IncludeFreeSubGames), "PlayerService (API key)", onlineLibraryGameIds, true);
+
+                    TryAddPlayTimes(() => playerService.GetClientLastPlayedTimesApiKey(settings.RuntimeApiKey), "API key");
+                }
+                else
+                {
+                    try
+                    {
+                        var userToken = await storeService.GetAccessTokenAsync();
+                        TryAddGames(() => playerService.GetOwnedGamesWeb(settings, userToken, settings.IncludeFreeSubGames), "PlayerService (access token)", onlineLibraryGameIds, true);
+
+                        if (!TryAddGames(() => clientCommService.GetClientAppList(settings, userToken), "GetClientAppList", onlineLibraryGameIds, true))
+                            TryAddGames(() => GetSteamStoreGamesAsync(settings, allGames).GetAwaiter().GetResult(), "userdata", onlineLibraryGameIds);
+
+                        // If importing family sharing games is disabled, still fetch the games to appropriately set the game source for installed games
+                        if (settings.ImportFamilySharedGames || settings.ImportInstalledGames)
+                            TryAddGames(() => familyGroupsService.GetSharedGames(settings, userToken, out familySharingUserIds), "Family Sharing", onlineLibraryGameIds, overwriteName: true, familySharingGames: true);
+
+                        TryAddPlayTimes(() => playerService.GetClientLastPlayedTimesWeb(userToken), "Web");
+
+                        var allower = parentalService.GetParentalAppAllower(userToken);
+                        foreach (var game in new List<GameMetadata>(allGames.Values))
+                        {
+                            if (allower.AppIsAllowed(game.GameId))
+                                continue;
+
+                            logger.Info($"Parental restriction: removing {game.Name} ({game.GameId}) from import");
+                            allGames.Remove(game.GameId);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        importError = e;
+                        logger.Error(e, "Failed to get access token for Steam account.");
+                    }
+                }
+
+                if (settings.AdditionalAccounts.HasItems())
+                {
+                    foreach (var account in settings.AdditionalAccounts)
+                    {
+                        if (!ulong.TryParse(account.AccountId, out var accountId))
+                        {
+                            logger.Error($"Steam account ID provided ({account.AccountId}) is not valid account ID.");
+                            continue;
+                        }
+
+                        if (familySharingUserIds.Contains(account.AccountId))
+                        {
+                            logger.Info($"Skipped extra account import for {accountId} because it's in the family sharing group");
+                            continue;
+                        }
+
+                        TryAddGames(() => playerService.GetOwnedGamesApiKey(settings, accountId,  account.RuntimeApiKey, false, account.ImportPlayTime), $"Extra Account ({accountId})", onlineLibraryGameIds, true);
+
+                        TryAddPlayTimes(() => playerService.GetClientLastPlayedTimesApiKey(account.RuntimeApiKey), $"Extra Account ({accountId})");
+                    }
+                }
+
+                if (settings.IgnoreOtherInstalled)
+                {
+                    var idsOfInstalledGamesFromAccountsNotUnderUserControl = installedGameIds.Except(onlineLibraryGameIds).ToList();
+                    foreach (var installedGameId in idsOfInstalledGamesFromAccountsNotUnderUserControl)
+                    {
+                        if (IsModId(installedGameId))
+                            continue;
+
+                        allGames.Remove(installedGameId);
+                    }
+                }
+            }
+
+            TryAddGames(() => GetGamesFromExtraIds(settings), "Settings Game-IDs");
+
+            if (importError != null)
+            {
+                playniteApi.Notifications.Add(new NotificationMessage(
+                                                  plugin.ImportErrorMessageId,
+                                                  string.Format(playniteApi.Resources.GetString("LOCLibraryImportError"), plugin.Name) +
+                                                  System.Environment.NewLine + importError.Message,
+                                                  NotificationType.Error,
+                                                  () => plugin.OpenSettingsView()));
+            }
+            else
+            {
+                playniteApi.Notifications.Remove(plugin.ImportErrorMessageId);
+            }
+
+            var output = allGames.Values.Where(g => !g.Name.IsNullOrWhiteSpace() && (g.IsInstalled || settings.ImportUninstalledGames)).ToList();
+
+            foreach (var game in output.Where(g => g.Source == null)) //installed games don't get a source by default
+            {
+                game.Source = new MetadataNameProperty(SourceNames.Steam);
+            }
+
+            UpdateExistingGames(output);
+
+            return output;
+        }
+
+        private async Task<IEnumerable<GameMetadata>> GetSteamStoreGamesAsync(SteamLibrarySettings settings, Dictionary<string, GameMetadata> pendingImportGames)
+        {
+            var appIds = (await storeService.GetUserDataAsync()).rgOwnedApps;
+
+            var existingLibraryIds = playniteApi.Database.Games.Where(g => g.PluginId == plugin.Id).Select(g => g.GameId).ToHashSet();
+
+            var newAppIds = appIds.Where(id =>
+            {
+                var strId = id.ToString();
+                return !pendingImportGames.ContainsKey(strId)
+                       && !existingLibraryIds.Contains(strId);
+            }).ToList();
+
+            var output = new List<GameMetadata>();
+            using (var storeClient = new global::Steam.WebApiClient())
+            {
+                foreach (var appId in newAppIds)
+                {
+                    try
+                    {
+                        var app = storeClient.GetStoreAppDetail(appId, settings.LanguageKey);
+                        if (app == null || string.IsNullOrWhiteSpace(app.name) ||
+                            !"game".Equals(app.type, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        output.Add(new GameMetadata
+                        {
+                            Name = app.name.RemoveTrademarks(),
+                            GameId = appId.ToString(),
+                            Platforms = new HashSet<MetadataProperty> { new MetadataSpecProperty("pc_windows") },
+                            Source = new MetadataNameProperty(SourceNames.Steam)
+                        });
+                    }
+                    catch (Exception)
+                    {
+                        // A missing/delisted store item must not discard the rest of the library.
+                        logger.Warn($"Could not retrieve Steam store details for app {appId}.");
+                    }
+                }
+            }
+            return output;
+        }
+
+        private void UpdateExistingGames(ICollection<GameMetadata> games)
+        {
+            var sources = new Dictionary<string, GameSource>();
+
+            GameSource GetOrCreateSource(string name)
+            {
+                if (sources.TryGetValue(name, out var source))
+                    return source;
+
+                source = playniteApi.Database.Sources.FirstOrDefault(s => name.Equals(s.Name, StringComparison.InvariantCultureIgnoreCase))
+                         ?? playniteApi.Database.Sources.Add(name);
+
+                sources.Add(name, source);
+                return source;
+            }
+
+            using (playniteApi.Database.BufferedUpdate())
+            {
+                foreach (var newGame in games)
+                {
+                    var existingGame = playniteApi.Database.Games.FirstOrDefault(g => g.GameId == newGame.GameId && g.PluginId == plugin.Id);
+                    if (existingGame == null)
+                        continue;
+
+                    bool update = false;
+
+                    var oldSource = existingGame.Source;
+                    var newSourceName = ((MetadataNameProperty)newGame.Source).Name;
+                    if (SourceNames.IsUpdatableSource(oldSource?.Name) && SourceNames.IsUpdatableSource(newSourceName))
+                    {
+                        var newSource = GetOrCreateSource(newSourceName);
+
+                        if (oldSource?.Id != newSource.Id)
+                        {
+                            existingGame.SourceId = newSource.Id;
+                            update = true;
+                        }
+                    }
+
+                    if (!(existingGame.InstallSize > 0) && newGame.InstallSize > 0)
+                    {
+                        existingGame.InstallSize = newGame.InstallSize;
+                        update = true;
+                    }
+
+                    if (update)
+                    {
+                        existingGame.Modified = DateTime.Now;
+                        playniteApi.Database.Games.Update(existingGame);
+                    }
+                }
+            }
+        }
+
+        private static bool IsModId(string gameId) => new GameID(ulong.Parse(gameId)).IsMod;
+
+        private IEnumerable<GameMetadata> GetGamesFromExtraIds(SteamLibrarySettings settings)
+        {
+            if (!settings.ExtraIDsToImport.HasItems())
+                yield break;
+
+            foreach (var extraItem in settings.ExtraIDsToImport)
+            {
+                var parseResult = ParseExtraIdItem(extraItem);
+                if (parseResult is null)
+                {
+                    continue;
+                }
+
+                yield return new GameMetadata
+                {
+                    GameId = parseResult.Item1,
+                    Name = parseResult.Item2,
+                    Source = new MetadataNameProperty(SourceNames.Steam),
+                    Platforms = new HashSet<MetadataProperty> { new MetadataSpecProperty("pc_windows") }
+                };
+            }
+        }
+
+        /// <summary>
+        /// Parse a string in Steam drag-and-drop format or custom Playnite format
+        /// </summary>
+        /// <example>Counter-Strike: Source: https://store.steampowered.com/app/240</example>
+        /// <example>240;Counter-Strike: Source</example>
+        /// <returns>id and name</returns>
+        private static Tuple<string, string> ParseExtraIdItem(string value)
+        {
+            if (value.IsNullOrWhiteSpace())
+            {
+                return null;
+            }
+
+            string idToken;
+            string nameToken;
+            var match = steamItemPattern.Match(value);
+            if (match.Success)
+            {
+                idToken = match.Groups[2].Value;
+                nameToken = match.Groups[1].Value;
+            }
+            else
+            {
+                var split = value.Split(';');
+                if (split.Length < 2)
+                {
+                    return null;
+                }
+
+                idToken = split[0];
+                nameToken = split[1];
+            }
+
+            if (!uint.TryParse(idToken, out _))
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(nameToken))
+            {
+                return null;
+            }
+
+            return new Tuple<string, string>(idToken, nameToken);
+        }
+    }
+}

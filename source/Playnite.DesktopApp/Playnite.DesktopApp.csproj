@@ -21,15 +21,14 @@
     <InternalsVisibleTo Include="Playnite.DesktopApp.Tests" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Playnite.BrowserProcess\Playnite.BrowserProcess.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\SteamLibrary\SteamLibrary.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\EpicLibrary\EpicLibrary.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\PlayniteSDK\Playnite.SDK.csproj" />
     <ProjectReference Include="..\Playnite\Playnite.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\Playnite\GameLink\WebClient\**\*" Exclude="..\Playnite\GameLink\WebClient\node_modules\**">
-      <Link>GameLink\WebClient\%(RecursiveDir)%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <Resource Include="..\..\references\Fonts\icofont.ttf">
       <Link>Fonts\icofont.ttf</Link>
     </Resource>
@@ -73,6 +72,6 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <PostBuildEvent>SETX PLAYNITE_SLN $(SolutionDir)</PostBuildEvent>
+    <PostBuildEvent Condition="'$(SolutionDir)' != ''">SETX PLAYNITE_SLN $(SolutionDir)</PostBuildEvent>
   </PropertyGroup>
 </Project>

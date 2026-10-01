@@ -1,4 +1,4 @@
-﻿using Playnite;
+using Playnite;
 using Playnite.API;
 using Playnite.Common;
 using Playnite.Database;
@@ -83,8 +83,8 @@ namespace Playnite
         private readonly IActionSelector actionSelector;
         private bool wasHdrEnabled;
         private InstantPlayView instantPlayView;
-        public IInstantPlayAddressProvider InstantPlayAddressProvider { get; set; } = new LoopbackInstantPlayAddressProvider();
-        public ILocalHandoff LocalHandoff { get; set; } = new UnavailableLocalHandoff();
+        public IInstantPlayAddressProvider InstantPlayAddressProvider { get; set; } = new BackendInstantPlayAddressProvider();
+        private CancellationTokenSource instantPlayStarting;
         public HandoffSession InstantPlaySession => instantPlayView?.Session;
         public bool InstantPlayRestSiteReached => instantPlayView?.RestSiteReached ?? false;
 
@@ -163,6 +163,7 @@ namespace Playnite
 
         public void Dispose()
         {
+            instantPlayStarting?.Cancel();
             instantPlayView?.Dispose();
             instantPlayView = null;
             foreach (var monitor in steamInstallMonitors.Values)
@@ -193,8 +194,15 @@ namespace Playnite
             StartInstantPlay(game);
         }
 
-        public void StartInstantPlay(Game game)
+        public async void StartInstantPlay(Game game)
         {
+            instantPlayStarting?.Cancel();
+            if (game.IsInstalled)
+            {
+                PlayGame(game, false);
+                return;
+            }
+
             if (instantPlayView != null && instantPlayView.Session.State != HandoffState.Closed)
             {
                 if (instantPlayView.Session.GameId == game.Id) return;
@@ -202,36 +210,78 @@ namespace Playnite
             }
 
             InstantPlayAddress address;
-            try { address = InstantPlayAddressProvider.Create(game); }
+            instantPlayStarting = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            var startup = instantPlayStarting;
+            try { address = await InstantPlayAddressProvider.CreateAsync(game, startup.Token); }
+            catch (OperationCanceledException) { return; }
             catch (Exception exc)
             {
-                logger.Error(exc, "Cannot start instant play: ");
-                Dialogs.ShowErrorMessage("즉시 플레이 페이지를 시작할 수 없습니다. " + exc.Message, LOC.GameError);
+                logger.Error("Cannot start instant play (" + exc.GetType().Name + ").");
+                var message = exc.Message;
+                if (exc is BackendRejectedException rejected && (rejected.Status == 401 || rejected.Status == 403))
+                    message = "백엔드 인증 또는 게임 접근 권한을 확인해 주세요. 연결 설정을 다시 저장한 뒤 즉시 플레이를 재시도할 수 있습니다.";
+                else if (exc is System.Net.Http.HttpRequestException || exc is System.Threading.Tasks.TaskCanceledException)
+                    message = "백엔드에 연결할 수 없습니다. 서버가 실행 중인지, 연결 주소가 올바른지 확인해 주세요.";
+                Dialogs.ShowErrorMessage("즉시 플레이를 시작할 수 없습니다. " + message, LOC.GameError);
+                if (exc is BackendRejectedException || exc is System.Net.Http.HttpRequestException || exc is NativeBackendConfigurationException)
+                    BackendConnectionDialog.EnsureConfigured(true);
                 return;
+            }
+            if (startup != instantPlayStarting || startup.IsCancellationRequested)
+            {
+                try { using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+                    await address.Backend.PostAsync("v2/sessions/" + address.SessionId + "/close", new { }, timeout.Token);
+                    if (address.Journal != null) address.Journal.Closed = true; }
+                catch { }
+                address.Journal?.Dispose(); address.Backend?.Dispose(); return;
             }
             if (address?.Url == null || !Guid.TryParse(address.SessionId, out _) ||
                 !(address.Url.Scheme == Uri.UriSchemeHttps ||
                   (address.Url.Scheme == Uri.UriSchemeHttp && address.Url.IsLoopback)))
                 throw new InvalidOperationException("Invalid GameLink session address.");
 
-            var view = Application.PlayniteApiGlobal.WebViews.CreateView(new WebViewSettings
-            {
-                FullscreenContentOnly = true
-            }) as Playnite.WebView.WebView;
-            if (view == null) throw new InvalidOperationException("GameLink requires the internal WebView.");
+            var view = new InstantPlayWebView();
             view.WindowHost.Owner = null;
-            var sessionView = new InstantPlayView(view, address, game, LocalHandoff);
+            var sessionView = new InstantPlayView(view, address, game, new VerifiedLocalGameAdapter(() => Database.Games.Get(game.Id), PrepareGameLoader));
             instantPlayView = sessionView;
             try
             {
                 view.Navigate(address.Url.AbsoluteUri);
                 view.Open();
+                if (game.IsInstalled) sessionView.SetInstallationReady();
+                else if (!game.IsInstalling && !game.IsUninstalling) InstallGame(game);
             }
             catch
             {
                 sessionView.Dispose();
                 instantPlayView = null;
                 throw;
+            }
+        }
+
+        private bool PrepareGameLoader(Game game)
+        {
+            if (game.GameId != "2868840" || string.IsNullOrWhiteSpace(game.InstallDirectory)) return false;
+            var bundled = Path.Combine(Path.GetDirectoryName(typeof(GamesEditor).Assembly.Location),
+                "GameLink", "GameLoader");
+            var destination = Path.Combine(game.InstallDirectory, "mods", "GameLoader");
+            try
+            {
+                if (!File.Exists(Path.Combine(bundled, "GameLoader.dll")) ||
+                    !File.Exists(Path.Combine(bundled, "GameLoader.json")))
+                {
+                    logger.Error("Bundled GameLoader mod is missing; local handoff cannot start.");
+                    return false;
+                }
+                Directory.CreateDirectory(destination);
+                File.Copy(Path.Combine(bundled, "GameLoader.dll"), Path.Combine(destination, "GameLoader.dll"), true);
+                File.Copy(Path.Combine(bundled, "GameLoader.json"), Path.Combine(destination, "GameLoader.json"), true);
+                return true;
+            }
+            catch (Exception exc) when (exc is IOException || exc is UnauthorizedAccessException)
+            {
+                logger.Error(exc, "Cannot install GameLoader mod: ");
+                return false;
             }
         }
 
@@ -256,7 +306,7 @@ namespace Playnite
 
         public void PlayGame(Game game, bool launchedFromUI, int actionIndex = -1)
         {
-            if (launchedFromUI)
+            if (launchedFromUI && !game.IsInstalled)
             {
                 StartInstantPlay(game);
                 return;
@@ -1594,6 +1644,7 @@ namespace Playnite
             dbGame.Playtime += args.SessionLength;
             Database.Games.Update(dbGame);
             controllers.RemoveController(args.Source);
+
             gameStartups.TryRemove(game.Id, out _);
 
             var restore = false;
@@ -1750,6 +1801,8 @@ namespace Playnite
 
             Database.Games.Update(dbGame);
             controllers.RemoveController(args.Source);
+            if (instantPlayView?.Session.GameId == dbGame.Id && dbGame.IsInstalled)
+                instantPlayView.SetInstallationReady();
         }
 
         private void Controllers_InstallationCancelled(object sender, GameInstallationCancelledEventArgs args)

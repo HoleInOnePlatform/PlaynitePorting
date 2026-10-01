@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Copyright>Copyright © Josef Nemec 2026</Copyright>
     <Version>10.60</Version>
@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Playnite.Tests" />
+    <Reference Include="System.Security" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,9 +23,6 @@
 
   <ItemGroup>
     <None Include="Common.config">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="GameLink\WebClient\**\*" Exclude="GameLink\WebClient\node_modules\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="crash_reporter.cfg">
@@ -92,6 +90,7 @@
     <PackageReference Include="Magick.NET.SystemWindowsMedia" Version="8.0.27" />
     <PackageReference Include="Markdig" Version="0.18.0" />
     <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.39" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3537.50" />
     <PackageReference Include="Nett" Version="0.10.1" />
     <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
     <PackageReference Include="NLog" Version="4.7.6" />

@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk" TreatAsLocalProperty="OutputPath">
+  <PropertyGroup>
+    <TargetFramework>net462</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <LangVersion>12</LangVersion>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PlayniteSDK\Playnite.SDK.csproj" />
+    <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Management" />
+    <Reference Include="System.ServiceModel" />
+    <Reference Include="System.Web" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\playnite\native\Fileapi.cs" Link="Shared\Native\Fileapi.cs" />
+    <Compile Include="..\playnite\native\Gdi32.cs" Link="Shared\Native\Gdi32.cs" />
+    <Compile Include="..\playnite\native\Kernel32.cs" Link="Shared\Native\Kernel32.cs" />
+    <Compile Include="..\playnite\native\Ntdll.cs" Link="Shared\Native\Ntdll.cs" />
+    <Compile Include="..\playnite\native\Powrprof.cs" Link="Shared\Native\Powrprof.cs" />
+    <Compile Include="..\playnite\native\Processthreadsapi.cs" Link="Shared\Native\Processthreadsapi.cs" />
+    <Compile Include="..\playnite\native\Psapi.cs" Link="Shared\Native\Psapi.cs" />
+    <Compile Include="..\playnite\native\Shell32.cs" Link="Shared\Native\Shell32.cs" />
+    <Compile Include="..\playnite\native\Shlwapi.cs" Link="Shared\Native\Shlwapi.cs" />
+    <Compile Include="..\playnite\native\User32.cs" Link="Shared\Native\User32.cs" />
+    <Compile Include="..\playnite\native\Winbase.cs" Link="Shared\Native\Winbase.cs" />
+    <Compile Include="..\playnite\native\Windef.cs" Link="Shared\Native\Windef.cs" />
+    <Compile Include="..\playnite\native\WinError.cs" Link="Shared\Native\WinError.cs" />
+    <Compile Include="..\playnite\native\Wingdi.cs" Link="Shared\Native\Wingdi.cs" />
+    <Compile Include="..\playnite\native\Winnt.cs" Link="Shared\Native\Winnt.cs" />
+    <Compile Include="..\playnite\native\winuser.cs" Link="Shared\Native\winuser.cs" />
+    <Compile Include="..\playnite\common\extensions\Enums.cs" Link="Shared\Enums.cs" />
+    <Compile Include="..\playnite\common\extensions\ObjectExtensions.cs" Link="Shared\ObjectExtensions.cs" />
+    <Compile Include="..\playnite\common\extensions\ProcessExtensions.cs" Link="Shared\ProcessExtensions.cs" />
+    <Compile Include="..\playnite\common\extensions\StringExtensions.cs" Link="Shared\StringExtensions.cs" />
+    <Compile Include="..\playnite\common\FileSystem.cs" Link="Shared\FileSystem.cs" />
+    <Compile Include="..\playnite\common\GlobalRandom.cs" Link="Shared\GlobalRandom.cs" />
+    <Compile Include="..\Playnite\Common\IniParser.cs" Link="Shared\IniParser.cs" />
+    <Compile Include="..\playnite\common\Paths.cs" Link="Shared\Paths.cs" />
+    <Compile Include="..\playnite\common\ProcessMonitor.cs" Link="Shared\ProcessMonitor.cs" />
+    <Compile Include="..\playnite\common\ProcessStarter.cs" Link="Shared\ProcessStarter.cs" />
+    <Compile Include="..\playnite\common\Programs.cs" Link="Shared\Programs.cs" />
+    <Compile Include="..\playnite\common\web\Downloader.cs" Link="Shared\Downloader.cs" />
+    <Compile Include="..\playnite\common\web\HttpDownloader.cs" Link="Shared\HttpDownloader.cs" />
+    <Compile Include="..\Playnite\Converters\InvertableBooleanToVisibilityConverter.cs" Link="Shared\InvertableBooleanToVisibilityConverter.cs" />
+    <Compile Include="..\playnite\converters\NegateConverter.cs" Link="Shared\NegateConverter.cs" />
+    <Compile Include="..\playnite\converters\ObjectToStringConverter.cs" Link="Shared\ObjectToStringConverter.cs" />
+    <Page Remove="Localization\**\*.xaml" />
+    <None Include="Localization\**\*.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="extension.yaml;Resources\**;UPSTREAM-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
