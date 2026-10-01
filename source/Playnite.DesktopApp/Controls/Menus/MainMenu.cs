@@ -131,7 +131,7 @@ namespace Playnite.DesktopApp.Controls
             AddMenuChild(Items, "LOCMenuSelectRandomGame", mainModel.SelectRandomGameCommand, null, "DiceIcon");
 
             // Addons
-            AddMenuChild(Items, "LOCMenuAddons", mainModel.OpenAddonsCommand, null, "AddonsIcon");
+            // Online add-ons depend on the removed Playnite backend.
 
             // Settings
             AddMenuChild(Items, "LOCMenuPlayniteSettingsTitle", mainModel.OpenSettingsCommand, null, "SettingsIcon");
@@ -197,7 +197,6 @@ namespace Playnite.DesktopApp.Controls
 
             // About
             AddMenuChild(Items, "LOCMenuAbout", mainModel.OpenAboutCommand, null, "AboutPlayniteIcon");
-            AddMenuChild(Items, "LOCCheckForUpdates", mainModel.CheckForUpdateCommand);
             Items.Add(new Separator());
 
             // Patreon

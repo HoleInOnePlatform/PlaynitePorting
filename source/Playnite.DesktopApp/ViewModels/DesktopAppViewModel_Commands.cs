@@ -261,7 +261,7 @@ namespace Playnite.DesktopApp.ViewModels
             CheckForUpdateCommand = new RelayCommand<object>((a) =>
             {
                 CheckForUpdate();
-            });
+            }, (a) => false);
 
             OpenDbFieldsManagerCommand = new RelayCommand<object>((a) =>
             {
@@ -333,15 +333,8 @@ namespace Playnite.DesktopApp.ViewModels
 
             OpenAddonsCommand = new RelayCommand<object>((a) =>
             {
-                new AddonsViewModel(
-                    new AddonsWindowFactory(),
-                    Dialogs,
-                    Resources,
-                    App.ServicesClient,
-                    Extensions,
-                    AppSettings,
-                    App).OpenView();
-            }, new KeyGesture(Key.F9));
+                Dialogs.ShowMessage("홀인원에서는 온라인 애드온을 지원하지 않음.", "HoleInOne");
+            }, (a) => false, new KeyGesture(Key.F9));
 
             StartGameCommand = new RelayCommand<Game>((game) =>
             {

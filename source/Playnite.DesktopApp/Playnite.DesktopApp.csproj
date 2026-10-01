@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <AssemblyTitle>Playnite Desktop Application</AssemblyTitle>
+    <AssemblyTitle>HoleInOne Desktop Application</AssemblyTitle>
     <Copyright>Copyright © Josef Nemec 2026</Copyright>
     <TargetFramework>net462</TargetFramework>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>

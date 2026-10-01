@@ -26,7 +26,7 @@ namespace Playnite.DesktopApp.ViewModels
         {
             get
             {
-                return "Playnite " + Updater.CurrentVersion.ToString(2);
+                return "HoleInOne (Playnite " + Updater.CurrentVersion.ToString(2) + ")";
             }
         }
 
@@ -74,7 +74,7 @@ namespace Playnite.DesktopApp.ViewModels
         {
             get
             {
-                if (PlayniteEnvironment.InOfflineMode)
+                if (!ServicesClient.IsEnabled || PlayniteEnvironment.InOfflineMode)
                 {
                     return string.Empty;
                 }

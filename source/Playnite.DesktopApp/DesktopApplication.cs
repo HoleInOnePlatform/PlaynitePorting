@@ -267,17 +267,15 @@ namespace Playnite.DesktopApp
                 Database.SetDatabasePath(AppSettings.DatabasePath);
                 Database.OpenDatabase();
 
-                var wizardWindow = new FirstTimeStartupWindowFactory();
-                var wizardModel = new FirstTimeStartupViewModel(
-                    wizardWindow,
-                    Dialogs,
-                    new ResourceProvider(),
-                    Extensions,
-                    ServicesClient);
-                if (wizardModel.OpenView() == true)
+                if (Playnite.Services.ServicesClient.IsEnabled)
                 {
-                    var settings = wizardModel.Settings;
-                    AppSettings.DisabledPlugins = settings.DisabledPlugins;
+                    var wizardWindow = new FirstTimeStartupWindowFactory();
+                    var wizardModel = new FirstTimeStartupViewModel(
+                        wizardWindow, Dialogs, new ResourceProvider(), Extensions, ServicesClient);
+                    if (wizardModel.OpenView() == true)
+                    {
+                        AppSettings.DisabledPlugins = wizardModel.Settings.DisabledPlugins;
+                    }
                 }
 
                 AppSettings.AutoBackupEnabled = true;

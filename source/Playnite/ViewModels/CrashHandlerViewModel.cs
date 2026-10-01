@@ -236,7 +236,7 @@ namespace Playnite.ViewModels
                 }
 
                 var mode = PlayniteApplication.Current.Mode;
-                if (PlayniteEnvironment.InOfflineMode && mode == ApplicationMode.Desktop)
+                if ((!ServicesClient.IsEnabled || PlayniteEnvironment.InOfflineMode) && mode == ApplicationMode.Desktop)
                 {
                     Explorer.NavigateToFileSystemEntry(diagPath);
                     return;

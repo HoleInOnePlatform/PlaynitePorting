@@ -1454,7 +1454,7 @@ namespace Playnite
 
         public async Task StartUpdateCheckerAsync()
         {
-            if (PlayniteEnvironment.InOfflineMode)
+            if (!Services.ServicesClient.IsEnabled || PlayniteEnvironment.InOfflineMode)
             {
                 return;
             }
@@ -1533,6 +1533,12 @@ namespace Playnite
 
         public void InstallOnlineAddon(string addonId)
         {
+            if (!Services.ServicesClient.IsEnabled)
+            {
+                Dialogs.ShowMessage("홀인원에서는 온라인 애드온 설치를 지원하지 않음.", "HoleInOne");
+                return;
+            }
+
             try
             {
                 var addon = ServicesClient.GetAddon(addonId);
