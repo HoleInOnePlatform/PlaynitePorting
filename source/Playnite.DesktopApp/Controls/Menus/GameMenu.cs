@@ -127,10 +127,10 @@ namespace Playnite.DesktopApp.Controls
                 {
                     var installItem = new MenuItem()
                     {
-                        Header = ResourceProvider.GetString(LOC.InstallGame),
-                        Icon = installIcon,
+                        Header = ResourceProvider.GetString(LOC.PlayGame),
+                        Icon = startIcon,
                         FontWeight = FontWeights.Bold,
-                        Command = model.InstallGameCommand,
+                        Command = model.StartGameCommand,
                         CommandParameter = game
                     };
 

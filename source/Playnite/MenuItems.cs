@@ -173,7 +173,7 @@ namespace Playnite
             }
             else if (!game.IsCustomGame)
             {
-                items.Add(new SearchItem(LOC.InstallGame, LOC.Activate, () => model.InstallGame(game), installIcon));
+                items.Add(new SearchItem(LOC.PlayGame, LOC.Activate, () => model.StartGame(game, true), startIcon));
             }
 
             // Custom Actions

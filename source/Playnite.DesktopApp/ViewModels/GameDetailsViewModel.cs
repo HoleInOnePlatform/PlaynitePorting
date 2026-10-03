@@ -65,7 +65,7 @@ namespace Playnite.DesktopApp.ViewModels
         {
             get
             {
-                return Game != null && Game.IsInstalled && !IsRunning && !IsInstalling && !IsUninstalling && !IsLaunching;
+                return Game != null && !IsRunning && !IsInstalling && !IsUninstalling && !IsLaunching;
             }
         }
 
@@ -73,7 +73,7 @@ namespace Playnite.DesktopApp.ViewModels
         {
             get
             {
-                return Game != null && (IsRunning || IsInstalling || IsUninstalling || IsLaunching || !IsInstalled);
+                return Game != null && (IsRunning || IsInstalling || IsUninstalling || IsLaunching);
             }
         }
 
@@ -107,7 +107,7 @@ namespace Playnite.DesktopApp.ViewModels
                 }
                 else if (Game?.IsInstalled == false)
                 {
-                    return resources.GetString("LOCInstallGame");
+                    return resources.GetString("LOCPlayGame");
                 }
                 else if (Game?.IsInstalled == true)
                 {

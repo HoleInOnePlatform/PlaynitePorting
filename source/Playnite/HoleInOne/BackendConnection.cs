@@ -30,10 +30,14 @@ namespace Playnite.HoleInOne
             }
         }
 
-        public async Task<CloudSession> CreateSessionAsync(CancellationToken cancellationToken)
+        public async Task<CloudSession> CreateSessionAsync(CancellationToken cancellationToken, string gameId = null)
         {
-            var session = await SendAsync<CloudSession>(HttpMethod.Post, "v1/holeinone/sessions", null, cancellationToken);
+            if (gameId != null) ValidateId(gameId);
+            var session = await SendAsync<CloudSession>(HttpMethod.Post, "v1/holeinone/sessions",
+                gameId == null ? null : new { gameId }, cancellationToken);
             ValidateId(session.SessionId);
+            if (gameId != null && session.GameId != gameId)
+                throw new InvalidDataException("요청한 게임과 클라우드 세션이 다름.");
             if (!Uri.TryCreate(session.StreamUrl, UriKind.Absolute, out var streamUri) || streamUri.Scheme != "https")
             {
                 throw new InvalidOperationException("클라우드 플레이 URL이 없음. Backend의 스트리밍 설정을 확인해야 함.");
@@ -144,6 +148,7 @@ namespace Playnite.HoleInOne
     public sealed class CloudSession
     {
         public string SessionId { get; set; }
+        public string GameId { get; set; }
         public string StreamUrl { get; set; }
     }
 

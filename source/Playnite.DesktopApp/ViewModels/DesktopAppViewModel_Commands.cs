@@ -276,12 +276,7 @@ namespace Playnite.DesktopApp.ViewModels
 
             OpenLibraryIntegrationsConfigCommand = new RelayCommand<object>((a) =>
             {
-                OpenIntegrationSettings(
-                    new LibraryIntegrationsViewModel(
-                        new LibraryIntegrationsWindowFactory(),
-                        Dialogs,
-                        Resources,
-                        Extensions));
+                new HoleInOne.LauncherSettingsWindow { Owner = System.Windows.Application.Current.MainWindow }.ShowDialog();
             });
 
             UpdateLibraryCommand = new RelayCommand<LibraryPlugin>((a) =>
@@ -309,8 +304,7 @@ namespace Playnite.DesktopApp.ViewModels
 
             ReloadScriptsCommand = new RelayCommand<object>((f) =>
             {
-                Extensions.LoadScripts(AppSettings.DisabledPlugins, App.CmdLine.SafeStartup, AppSettings.DevelExtenions.Where(a => a.Selected == true).Select(a => a.Item).ToList());
-            }, new KeyGesture(Key.F12));
+            }, (f) => false, new KeyGesture(Key.F12));
 
             ShowGameSideBarCommand = new RelayCommand<GamesCollectionViewEntry>((f) =>
             {

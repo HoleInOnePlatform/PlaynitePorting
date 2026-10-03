@@ -200,18 +200,7 @@ namespace Playnite.DesktopApp
 
         private async void OpenMainViewAsync(bool isFirstStart)
         {
-            if (!isFirstStart)
-            {
-                Extensions.LoadPlugins(
-                    AppSettings.DisabledPlugins,
-                    CmdLine.SafeStartup,
-                    AppSettings.DevelExtenions.Where(a => a.Selected == true).Select(a => a.Item).ToList());
-            }
-
-            Extensions.LoadScripts(
-                AppSettings.DisabledPlugins,
-                CmdLine.SafeStartup,
-                AppSettings.DevelExtenions.Where(a => a.Selected == true).Select(a => a.Item).ToList());
+            Extensions.LoadBuiltinLibraries();
             OnExtensionsLoaded();
 
             try

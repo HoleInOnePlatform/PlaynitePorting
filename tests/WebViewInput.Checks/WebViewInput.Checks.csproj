@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net462</TargetFramework>
+    <UseWpf>true</UseWpf>
+    <PlatformTarget>x86</PlatformTarget>
+    <LangVersion>12</LangVersion>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../source/Playnite/Playnite.csproj" />
+  </ItemGroup>
+</Project>

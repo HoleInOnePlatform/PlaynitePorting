@@ -174,7 +174,7 @@ namespace Playnite
             controllers.Stopped -= Controllers_Stopped;
         }
 
-        public void StartContextAction(Game game)
+        public virtual void StartContextAction(Game game)
         {
             if (game.IsInstalled)
             {
@@ -186,7 +186,7 @@ namespace Playnite
             }
         }
 
-        public void PlayGame(Game game, bool launchedFromUI, int actionIndex = -1)
+        public virtual void PlayGame(Game game, bool launchedFromUI, int actionIndex = -1)
         {
             if (!game.IsInstalled)
             {

@@ -23,6 +23,8 @@
   <ItemGroup>
     <ProjectReference Include="..\PlayniteSDK\Playnite.SDK.csproj" />
     <ProjectReference Include="..\Playnite\Playnite.csproj" />
+    <ProjectReference Include="..\BuiltinLibraries\SteamLibrary\SteamLibrary.csproj" />
+    <ProjectReference Include="..\BuiltinLibraries\EpicLibrary\EpicLibrary.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -65,6 +65,7 @@
                                                     Width="150" Height="40" Style="{DynamicResource PlayButton}" />
                                             <Button Name="PART_ButtonContextAction"
                                                     Width="150" Height="40" />
+                                            <Button Name="PART_ButtonInstallAction" Content="{DynamicResource LOCInstallGame}" Width="100" Height="40" Margin="10,0,0,0" />
                                             <Button Name="PART_ButtonMoreActions"
                                                     Content="{DynamicResource LOCMoreAction}"
                                                     Width="150" Height="40" Margin="10,0,0,0" />

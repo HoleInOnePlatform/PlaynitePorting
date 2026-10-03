@@ -81,6 +81,24 @@ namespace Playnite.Plugins
             get => Plugins.Where(a => a.Value.Description.Type == ExtensionType.GameLibrary).Select(a => (LibraryPlugin)a.Value.Plugin).ToList();
         }
 
+        public void LoadBuiltinLibraries()
+        {
+            foreach (var library in new[] { "SteamLibrary", "EpicLibrary" })
+            {
+                // Only bundled, source-built store integrations are loaded. External add-ons stay disabled.
+                var path = Path.Combine(PlaynitePaths.ProgramPath, "BuiltinLibraries", library, "extension.yaml");
+                var manifest = ExtensionManifest.FromFile(path);
+                manifest.Module = Path.Combine("..", "..", library + ".dll");
+                manifest.Icon = Path.Combine("..", "..", manifest.Icon);
+                Localization.LoadAddonLocalization(manifest.DirectoryPath);
+                foreach (var plugin in LoadPlugins(manifest, apiGenerator))
+                {
+                    Plugins.Add(plugin.Id, new LoadedPlugin(plugin, manifest));
+                    logger.Info($"Loaded bundled library: {manifest.Name}, version {manifest.Version}");
+                }
+            }
+        }
+
         public List<MetadataPlugin> MetadataPlugins
         {
             get => Plugins.Where(a => a.Value.Description.Type == ExtensionType.MetadataProvider).Select(a => (MetadataPlugin)a.Value.Plugin).ToList();

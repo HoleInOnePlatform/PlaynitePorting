@@ -23,6 +23,11 @@ var session = await client.CreateSessionAsync(token);
 Check(session.SessionId == "session1", "create session and deserialize stream URL");
 Check(wire.Calls[0] == "POST /v1/holeinone/sessions", "session HTTP route");
 Check(wire.Authorized, "bearer token sent");
+await client.CreateSessionAsync(token, "epic-other-game");
+Check(wire.LastGame == "epic-other-game", "selected game ID reaches session creation");
+using var wrongGameWire = new FakeBackend { ResponseGame = "steam-wrong-game" };
+using var wrongGameClient = new BackendConnection("http://localhost:5010", handler: wrongGameWire);
+await Reject(() => wrongGameClient.CreateSessionAsync(token, "epic-other-game"), "wrong game session is rejected before opening stream");
 
 var transfer = new HandoffSession(client, session.SessionId);
 Check(await transfer.PollAsync(true, token) == null && wire.SaveRequests == 0, "installation first waits for campfire");
@@ -68,6 +73,7 @@ try
     Check(File.ReadAllText(pending) == json && !Directory.GetFiles(mod, "*.tmp").Any(), "existing ticket preserved and temporary file cleaned");
 }
 finally { Directory.Delete(root, true); }
+StoreChecks.Run(Check);
 Console.WriteLine($"{count} checks passed.");
 
 sealed class FakeBackend : HttpMessageHandler
@@ -79,6 +85,8 @@ sealed class FakeBackend : HttpMessageHandler
     public string TicketSession = "session1";
     public int SaveRequests;
     public string LastRun;
+    public string LastGame;
+    public string ResponseGame;
     public bool Authorized = true;
     public readonly List<string> Calls = new();
 
@@ -91,7 +99,8 @@ sealed class FakeBackend : HttpMessageHandler
         object body;
         if (path == "/v1/holeinone/sessions")
         {
-            body = new { sessionId = "session1", streamUrl = StreamUrl };
+            LastGame = request.Content == null ? null : (string)Newtonsoft.Json.Linq.JObject.Parse(await request.Content.ReadAsStringAsync())["gameId"];
+            body = new { sessionId = "session1", gameId = ResponseGame ?? LastGame, streamUrl = StreamUrl };
         }
         else if (path.Contains("/campfires?"))
         {

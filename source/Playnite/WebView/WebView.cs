@@ -77,7 +77,7 @@ namespace Playnite.WebView
         private void Browser_TitleChanged(object sender, DependencyPropertyChangedEventArgs args)
         {
             string titlePrefix = args.NewValue as string;
-            string titleSuffix = "Playnite";
+            string titleSuffix = "HoleInOne";
 
             window.Title = string.IsNullOrEmpty(titlePrefix) ? titleSuffix : string.Format("{0} - {1}", titlePrefix, titleSuffix);
         }
@@ -141,6 +141,11 @@ namespace Playnite.WebView
         public void Open()
         {
             window.Show();
+        }
+
+        public void EnableGameInput()
+        {
+            window.EnableGameInput();
         }
 
         public bool? OpenDialog()
