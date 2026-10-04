@@ -16,6 +16,29 @@ namespace Playnite.HoleInOne
     {
         private readonly HttpClient client;
 
+        public async Task CheckDevelopmentHealthAsync(CancellationToken cancellationToken)
+        {
+            var health = await SendAsync<BackendHealth>(HttpMethod.Get, "health", null, cancellationToken);
+            if (health.Status != "ok" || health.Service != "holeinone" || health.ContractVersion != 1
+                || health.Authentication != "development")
+                throw new InvalidDataException("호환되는 홀인원 개발 서버가 아닙니다. 주소를 확인해 주세요.");
+        }
+
+        public async Task<AccountLogin> LoginAsync(string username, string password, CancellationToken cancellationToken)
+        {
+            if (client.BaseAddress.Scheme != "https" && !client.BaseAddress.IsLoopback)
+                throw new InvalidOperationException("로그인 서버에 안전하게 연결할 수 없습니다.");
+            var result = await SendAsync<AccountLogin>(HttpMethod.Post, "v1/holeinone/auth/login",
+                new { username, password }, cancellationToken);
+            if (string.IsNullOrWhiteSpace(result.AccessToken) || result.AccessToken.Length != 64 ||
+                result.AccessToken.Any(c => !Uri.IsHexDigit(c)) || result.ExpiresAt <= DateTimeOffset.UtcNow ||
+                string.IsNullOrWhiteSpace(result.Username))
+                throw new InvalidDataException("로그인 응답을 확인할 수 없습니다.");
+            return result;
+        }
+
+        public Task LogoutAsync(CancellationToken ct) => PostEmptyAsync("v1/holeinone/auth/logout", null, ct);
+
         public BackendConnection(string backendUrl, string bearerToken = null, HttpMessageHandler handler = null)
         {
             var address = ValidateAddress(backendUrl);
@@ -84,6 +107,78 @@ namespace Playnite.HoleInOne
                 SessionPath(sessionId) + "/save-requests/" + requestId, null, cancellationToken);
         }
 
+        public Task<ExportHandoffStatus> StartExportAsync(string sessionId, CancellationToken ct) =>
+            SendAsync<ExportHandoffStatus>(HttpMethod.Post, SessionPath(sessionId) + "/export-handoff", null, ct);
+
+        public Task<ExportHandoffStatus> GetExportAsync(string sessionId, CancellationToken ct) =>
+            SendAsync<ExportHandoffStatus>(HttpMethod.Get, SessionPath(sessionId) + "/export-handoff", null, ct);
+
+        public Task DownloadCompleteAsync(string sessionId, CancellationToken ct) =>
+            PostEmptyAsync(SessionPath(sessionId) + "/download-complete", null, ct);
+
+        public Task StopCloudAsync(string sessionId, CancellationToken ct) =>
+            PostEmptyAsync(SessionPath(sessionId) + "/stop", null, ct);
+
+        public Task ReceiveExportAsync(string sessionId, string requestId, string sha256, CancellationToken ct)
+        {
+            ValidateId(requestId);
+            return PostEmptyAsync(SessionPath(sessionId) + "/export-handoff/" + requestId + "/received", new { sha256 }, ct);
+        }
+
+        private async Task PostEmptyAsync(string path, object body, CancellationToken ct)
+        {
+            using (var request = new HttpRequestMessage(HttpMethod.Post, path))
+            {
+                if (body != null) request.Content = new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json");
+                using (var response = await client.SendAsync(request, ct))
+                {
+                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    {
+                        if (path == "v1/holeinone/auth/logout") return; // Already revoked or expired.
+                        throw new LoginRequiredException("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+                    }
+                    if (!response.IsSuccessStatusCode) throw new HttpRequestException("홀인원 Backend 요청 실패: HTTP " + (int)response.StatusCode);
+                }
+            }
+        }
+
+        public async Task DownloadExportAsync(string sessionId, ExportHandoffStatus status, string path, CancellationToken ct)
+        {
+            ValidateId(status.RequestId);
+            if (status.Status != "ready" || status.Size == null || status.Size < 1 || status.Size > 4L * 1024 * 1024 * 1024 ||
+                !System.Text.RegularExpressions.Regex.IsMatch(status.Sha256 ?? "", "^[a-f0-9]{64}$")) throw new InvalidDataException("잘못된 세이브 전송 정보임.");
+            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                timeout.CancelAfter(TimeSpan.FromMinutes(10));
+                using (var response = await client.GetAsync(SessionPath(sessionId) + "/export-handoff/" + status.RequestId + "/file",
+                    HttpCompletionOption.ResponseHeadersRead, timeout.Token))
+                {
+                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                        throw new LoginRequiredException("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+                    if (!response.IsSuccessStatusCode) throw new HttpRequestException("세이브 다운로드 실패: HTTP " + (int)response.StatusCode);
+                    if (!response.Headers.TryGetValues("X-Content-SHA256", out var hashes) || hashes.SingleOrDefault() != status.Sha256)
+                        throw new InvalidDataException("세이브 다운로드 해시가 요청과 다름.");
+                    using (var input = await response.Content.ReadAsStreamAsync())
+                    using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true))
+                    {
+                        var buffer = new byte[65536];
+                        long written = 0;
+                        int read;
+                        while ((read = await input.ReadAsync(buffer, 0, buffer.Length, timeout.Token)) != 0)
+                        {
+                            written += read;
+                            if (written > status.Size.Value) throw new InvalidDataException("세이브 크기 제한을 초과함.");
+                            await output.WriteAsync(buffer, 0, read, timeout.Token);
+                        }
+                        if (written != status.Size.Value) throw new InvalidDataException("세이브 다운로드가 완전하지 않음.");
+                    }
+                }
+                timeout.Token.ThrowIfCancellationRequested();
+                if (await Task.Run(() => ExportSaveInstaller.HashFile(path), timeout.Token) != status.Sha256)
+                    throw new InvalidDataException("세이브 다운로드 검증 실패.");
+            }
+        }
+
         private async Task<T> SendAsync<T>(HttpMethod method, string path, object body, CancellationToken cancellationToken)
         {
             using (var request = new HttpRequestMessage(method, path))
@@ -98,6 +193,37 @@ namespace Playnite.HoleInOne
                     // Do not include response bodies or authentication values in error messages.
                     if (!response.IsSuccessStatusCode)
                     {
+                        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                            throw new LoginRequiredException(path.EndsWith("/auth/login", StringComparison.Ordinal)
+                                ? "아이디 또는 비밀번호가 올바르지 않습니다." : "로그인이 만료되었습니다. 다시 로그인해 주세요.");
+                        if ((int)response.StatusCode == 429)
+                            throw new HttpRequestException("로그인 시도가 너무 많습니다. 5분 후 다시 시도해 주세요.");
+                        if (method == HttpMethod.Post && path == "v1/holeinone/sessions" &&
+                            (response.StatusCode == System.Net.HttpStatusCode.NotFound ||
+                             response.StatusCode == System.Net.HttpStatusCode.Conflict ||
+                             response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable))
+                        {
+                            BackendError details = null;
+                            try { details = JsonConvert.DeserializeObject<BackendError>(await response.Content.ReadAsStringAsync()); }
+                            catch (JsonException) { } // Proxies may return HTML or a non-object JSON response.
+                            if (details?.ErrorCode == "game_not_supported" || details?.ErrorCode == "game_not_configured" ||
+                                (string.IsNullOrEmpty(details?.ErrorCode) && details?.Error == "This game has no configured cloud application."))
+                                throw new CloudPlayUnavailableException("이 게임은 현재 클라우드 플레이를 지원하지 않음. 설치 버튼으로 PC에 설치한 뒤 플레이할 수 있음.");
+                            if (details?.ErrorCode == "game_not_ready")
+                                throw new CloudPlayUnavailableException("이 게임은 현재 클라우드에서 실행할 수 없는 상태임. 게임 준비를 기다리지 않고 요청을 종료함.");
+                            if (details?.ErrorCode == "game_catalog_unavailable")
+                                throw new CloudPlayUnavailableException("클라우드 지원 게임 목록을 확인할 수 없음. 서버 연결 및 조회 권한 확인 필요.");
+                            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                                throw new HttpRequestException("클라우드 플레이 요청 경로를 찾을 수 없음(HTTP 404). 서버 주소와 Backend 버전을 확인해야 함.");
+                        }
+                        if (path.EndsWith("/export-handoff", StringComparison.Ordinal) && response.StatusCode == System.Net.HttpStatusCode.Conflict)
+                        {
+                            // Only map known error codes; never surface raw response bodies or secrets.
+                            var details = JsonConvert.DeserializeObject<ExportHandoffStatus>(await response.Content.ReadAsStringAsync());
+                            if (details?.ErrorCode == "export_not_configured") throw new InvalidOperationException("클라우드 세이브 전환 설정이 아직 준비되지 않음.");
+                            if (details?.ErrorCode == "baseline_unverified") throw new InvalidOperationException("클라우드의 기존 세이브 구성을 먼저 확인해야 함.");
+                            throw new InvalidOperationException("이 게임의 세이브 저장 위치 또는 클라우드 전환 조건을 확인해야 함.");
+                        }
                         throw new HttpRequestException("홀인원 Backend 요청 실패: HTTP " + (int)response.StatusCode);
                     }
 
@@ -145,11 +271,74 @@ namespace Playnite.HoleInOne
         public void Dispose() => client.Dispose();
     }
 
+    public sealed class LoginRequiredException : HttpRequestException
+    {
+        public LoginRequiredException(string message) : base(message) { }
+    }
+
+    public sealed class CloudPlayUnavailableException : InvalidOperationException
+    {
+        public CloudPlayUnavailableException(string message) : base(message) { }
+    }
+
+    public sealed class AccountLogin
+    {
+        public string AccessToken { get; set; }
+        public DateTimeOffset ExpiresAt { get; set; }
+        public string Username { get; set; }
+    }
+
+    internal sealed class BackendHealth
+    {
+        public string Status { get; set; }
+        public string Service { get; set; }
+        public int ContractVersion { get; set; }
+        public string Authentication { get; set; }
+    }
+
+    internal sealed class BackendError
+    {
+        public string Error { get; set; }
+        public string ErrorCode { get; set; }
+    }
+
     public sealed class CloudSession
     {
         public string SessionId { get; set; }
         public string GameId { get; set; }
         public string StreamUrl { get; set; }
+    }
+
+    public sealed class ExportHandoffStatus
+    {
+        public string RequestId { get; set; }
+        public string GameId { get; set; }
+        public string Status { get; set; }
+        public long? Size { get; set; }
+        public string Sha256 { get; set; }
+        public string ErrorCode { get; set; }
+        public string FailureStage { get; set; }
+        public string AwsErrorCode { get; set; }
+
+        public string FailureMessage()
+        {
+            var stage = FailureStage == "resolve_session" ? "클라우드 세션 조회" :
+                FailureStage == "resolve_saves" ? "세이브 전환 설정 확인" :
+                FailureStage == "schedule_export" ? "파일 내보내기 요청" :
+                FailureStage == "terminate_session" ? "클라우드 세션 종료" :
+                FailureStage == "wait_export" ? "AWS 파일 생성" :
+                FailureStage == "download_export" ? "S3 파일 다운로드" :
+                FailureStage == "prepare_saves" ? "세이브 파일 준비" : "세이브 전환";
+            var reason = ErrorCode == "export_timeout" ? "처리 시간이 초과됨." :
+                ErrorCode == "export_not_configured" ? "클라우드 세이브 전환 설정이 아직 준비되지 않음." :
+                ErrorCode == "baseline_unverified" ? "클라우드 세이브 초기 상태 확인이 필요함." :
+                ErrorCode == "stream_not_exportable" ? "클라우드 세션이 종료되었거나 세이브를 내보낼 수 없는 상태임." :
+                AwsErrorCode == "AccessDenied" || AwsErrorCode == "AccessDeniedException" ? "AWS 접근 권한이 부족함." :
+                AwsErrorCode == "NoSuchBucket" ? "S3 버킷을 찾을 수 없음." :
+                AwsErrorCode == "NoSuchKey" ? "S3 내보내기 파일을 찾을 수 없음." :
+                AwsErrorCode == "ValidationException" ? "AWS 요청 조건을 확인해야 함." : "처리에 실패함.";
+            return stage + " 단계에서 " + reason + " Backend 오류 기록 확인 필요. 요청: " + RequestId;
+        }
     }
 
     public sealed class CampfireEvent

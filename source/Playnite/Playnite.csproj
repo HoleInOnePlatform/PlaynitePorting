@@ -15,6 +15,9 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Playnite.Tests" />
   </ItemGroup>
+  <PropertyGroup Condition="'$(HoleInOneDistribution)' == 'true'">
+    <DefineConstants>$(DefineConstants);HOLEINONE_DISTRIBUTION</DefineConstants>
+  </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PlayniteSDK\Playnite.SDK.csproj" />

@@ -1,6 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <AssemblyName>HoleInOne</AssemblyName>
+    <RootNamespace>Playnite.DesktopApp</RootNamespace>
+    <Product>HoleInOne</Product>
     <AssemblyTitle>HoleInOne Desktop Application</AssemblyTitle>
     <Copyright>Copyright © Josef Nemec 2026</Copyright>
     <TargetFramework>net462</TargetFramework>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net462</TargetFramework><UseWpf>true</UseWpf><LangVersion>12</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../source/Playnite/HoleInOne/HandoffDeadline.cs" Link="HandoffDeadline.cs" />
+    <Compile Include="../../source/Playnite.DesktopApp/HoleInOne/DownloadHandoffPrompt.cs" Link="DownloadHandoffPrompt.cs" />
+  </ItemGroup>
+</Project>

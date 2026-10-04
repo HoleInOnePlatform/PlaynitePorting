@@ -28,7 +28,7 @@ namespace Playnite.Common
 
         public TempDirectory(string dirName, bool autoDelete = true)
         {
-            TempPath = Path.Combine(Path.GetTempPath(), "Playnite", dirName);
+            TempPath = Path.Combine(Path.GetTempPath(), ApplicationIdentity.Name, dirName);
             FileSystem.CreateDirectory(TempPath, true);
             this.autoDelete = autoDelete;
         }

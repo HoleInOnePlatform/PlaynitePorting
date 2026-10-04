@@ -151,7 +151,7 @@ namespace Playnite.DesktopApp.Controls.Views
         private ItemsPanelTemplate GetItemsPanelTemplate()
         {
             XNamespace pns = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
-            XNamespace pctrls = "clr-namespace:Playnite.DesktopApp.Controls;assembly=Playnite.DesktopApp";
+            XNamespace pctrls = "clr-namespace:Playnite.DesktopApp.Controls;assembly=HoleInOne";
             XNamespace virtPanel = "clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel";
             var templateDoc = new XDocument(
                 new XElement(pns + nameof(ItemsPanelTemplate),

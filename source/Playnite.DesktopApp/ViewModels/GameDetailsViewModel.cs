@@ -404,6 +404,7 @@ namespace Playnite.DesktopApp.ViewModels
 
         private void Game_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
+            OnPropertyChanged(nameof(IsInstalled));
             OnPropertyChanged(nameof(IsRunning));
             OnPropertyChanged(nameof(IsInstalling));
             OnPropertyChanged(nameof(IsUninstalling));

@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -11,6 +12,14 @@ namespace Playnite
 {
     public class SystemIntegration
     {
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+
+        public static void SetApplicationIdentity()
+        {
+            Marshal.ThrowExceptionForHR(SetCurrentProcessExplicitAppUserModelID(ApplicationIdentity.AppUserModelId));
+        }
+
         public static void RegisterPlayniteUriProtocol()
         {
             var view = RegistryView.Registry32;
@@ -23,16 +32,16 @@ namespace Playnite
             using (var classes = root.OpenSubKey(@"Software\Classes", true))
             {
                 var openString = $"\"{PlaynitePaths.DesktopExecutablePath}\" --uridata \"%1\"";
-                var existing = classes.OpenSubKey(@"Playnite\shell\open\command");
+                var existing = classes.OpenSubKey(ApplicationIdentity.UriScheme + @"\shell\open\command");
                 if (existing != null && existing.GetValue(string.Empty)?.ToString() == openString)
                 {
                     existing.Dispose();
                     return;
                 }
 
-                using (var newEntry = classes.CreateSubKey("Playnite"))
+                using (var newEntry = classes.CreateSubKey(ApplicationIdentity.UriScheme))
                 {
-                    newEntry.SetValue(string.Empty, "URL:playnite");
+                    newEntry.SetValue(string.Empty, "URL:" + ApplicationIdentity.UriScheme);
                     newEntry.SetValue("URL Protocol", string.Empty);
                     using (var command = newEntry.CreateSubKey(@"shell\open\command"))
                     {
@@ -45,7 +54,7 @@ namespace Playnite
         public static void SetBootupStateRegistration(bool runOnBootup, bool startClosed)
         {
             var startupPath = Environment.GetFolderPath(Environment.SpecialFolder.Startup, Environment.SpecialFolderOption.Create);
-            var shortcutPath = Path.Combine(startupPath, "Playnite.lnk");
+            var shortcutPath = Path.Combine(startupPath, ApplicationIdentity.Name + ".lnk");
             if (runOnBootup)
             {
                 var args = new CmdLineOptions()
@@ -85,16 +94,16 @@ namespace Playnite
             using (var classes = root.OpenSubKey(@"Software\Classes", true))
             {
                 var openString = $"\"{PlaynitePaths.DesktopExecutablePath}\" --installext \"%1\"";
-                var existing = classes.OpenSubKey(@"Playnite.ext\shell\open\command");
+                var existing = classes.OpenSubKey(ApplicationIdentity.ExtensionProgId + @"\shell\open\command");
                 if (existing != null && existing.GetValue(string.Empty)?.ToString() == openString)
                 {
                     existing.Dispose();
                     return;
                 }
 
-                using (var newEntry = classes.CreateSubKey("Playnite.ext"))
+                using (var newEntry = classes.CreateSubKey(ApplicationIdentity.ExtensionProgId))
                 {
-                    newEntry.SetValue(string.Empty, "Playnite extension file");
+                    newEntry.SetValue(string.Empty, "HoleInOne extension file");
                     using (var command = newEntry.CreateSubKey(@"DefaultIcon"))
                     {
                         var icoPath = Path.Combine(PlaynitePaths.ProgramPath, "Resources", "playnite_extension.ico");
@@ -110,13 +119,13 @@ namespace Playnite
                 using (var newEntry = classes.CreateSubKey(PlaynitePaths.PackedExtensionFileExtention))
                 using (var command = newEntry.CreateSubKey(@"OpenWithProgids"))
                 {
-                    command.SetValue("Playnite.ext", string.Empty);
+                    command.SetValue(ApplicationIdentity.ExtensionProgId, string.Empty);
                 }
 
                 using (var newEntry = classes.CreateSubKey(PlaynitePaths.PackedThemeFileExtention))
                 using (var command = newEntry.CreateSubKey(@"OpenWithProgids"))
                 {
-                    command.SetValue("Playnite.ext", string.Empty);
+                    command.SetValue(ApplicationIdentity.ExtensionProgId, string.Empty);
                 }
             }
         }

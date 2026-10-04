@@ -11,10 +11,21 @@
         Style="{DynamicResource StandardWindowStyle}"
         WindowStartupLocation="CenterOwner"
         KeyUp="WindowBase_KeyUp">
+    <controls:WindowBase.Resources>
+        <ControlTemplate x:Key="GameWindowTemplate" TargetType="{x:Type controls:WindowBase}">
+            <AdornerDecorator>
+                <ContentPresenter Content="{TemplateBinding Content}" />
+            </AdornerDecorator>
+        </ControlTemplate>
+    </controls:WindowBase.Resources>
     <DockPanel Name="PanelContent">
-        <TextBox Text="{Binding Address, ElementName=Browser}"
+        <TextBox Name="AddressBar" Text="{Binding Address, ElementName=Browser}"
                  Background="{DynamicResource NormalBrushDark}"
                  DockPanel.Dock="Top" IsReadOnly="True" BorderThickness="0"/>
-        <cefSharp:ChromiumWebBrowser Name="Browser" DockPanel.Dock="Bottom" />
+        <Grid DockPanel.Dock="Bottom">
+            <cefSharp:ChromiumWebBrowser Name="Browser" />
+            <!-- Transparent outside overlay content so game input reaches the browser. -->
+            <Grid Name="PanelOverlay" Focusable="False" Panel.ZIndex="1" />
+        </Grid>
     </DockPanel>
 </controls:WindowBase>

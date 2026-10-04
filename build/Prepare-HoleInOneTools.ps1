@@ -1,6 +1,9 @@
-param([string]$GameLoaderDirectory = (Join-Path $PSScriptRoot '../../GameLoader/dist/GameLoader'))
+param(
+    [string]$GameLoaderDirectory,
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot '../artifacts/HoleInOne')
+)
 $ErrorActionPreference = 'Stop'
-$outputDirectory = Join-Path $PSScriptRoot '../artifacts/HoleInOne'
+$outputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 $toolDirectory = Join-Path $outputDirectory 'Tools/Legendary'
 New-Item -ItemType Directory -Force -Path $toolDirectory | Out-Null
 $executable = Join-Path $toolDirectory 'legendary.exe'
@@ -23,11 +26,14 @@ try {
     if (!$license) { throw 'Legendary 라이선스 파일을 찾지 못함.' }
     [IO.Compression.ZipFileExtensions]::ExtractToFile($license, (Join-Path $toolDirectory 'LICENSE'), $true)
 } finally { $archive.Dispose() }
-$loaderOutput = Join-Path $outputDirectory 'Mods/GameLoader'
-New-Item -ItemType Directory -Force -Path $loaderOutput | Out-Null
-foreach ($name in @('GameLoader.dll', 'GameLoader.json')) {
-    $sourceFile = Join-Path $GameLoaderDirectory $name
-    if (!(Test-Path -LiteralPath $sourceFile)) { throw "GameLoader 배포 파일이 필요함: $sourceFile" }
-    Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $loaderOutput $name) -Force
+if ($GameLoaderDirectory) {
+    # Only explicit legacy builds need this mod; AWS export handoff does not.
+    $loaderOutput = Join-Path $outputDirectory 'Mods/GameLoader'
+    New-Item -ItemType Directory -Force -Path $loaderOutput | Out-Null
+    foreach ($name in @('GameLoader.dll', 'GameLoader.json')) {
+        $sourceFile = Join-Path $GameLoaderDirectory $name
+        if (!(Test-Path -LiteralPath $sourceFile)) { throw "GameLoader 배포 파일이 필요함: $sourceFile" }
+        Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $loaderOutput $name) -Force
+    }
 }
-Write-Host 'Legendary 0.21.1 및 GameLoader 준비 완료.'
+Write-Host 'HoleInOne 도구 준비 완료. AWS 세이브 전환에는 GameLoader가 필요하지 않음.'

@@ -1,5 +1,48 @@
 # HoleInOne 개발 실행
 
+## 홀인원 전용 아이콘 (2026-10-04)
+
+- 최신 공유 파일: `artifacts/HoleInOne-TeamTest-20261004-icon.zip`. 기존 홀인원을 모두 종료하고 새 폴더에 전체 압축 해제 후 `Start-HoleInOne.cmd` 실행. 팀 테스트 사용자 데이터 경로는 그대로 유지함.
+- 민트색 H와 원형 포털을 결합한 전용 아이콘 적용. 실행 파일·작업 표시줄·트레이·메뉴·시작 화면·브라우저 보조 프로세스·확장 파일 아이콘을 교체함. 기본 테마의 기존 파일명은 유지함.
+- 원본과 생성 프롬프트: [assets/branding](assets/branding/README.md). `build/Apply-HoleInOneBranding.ps1`로 16~256px ICO 9개 크기와 앱 리소스 재생성 가능.
+- 데스크톱·브라우저 빌드, Windows 실행 파일 내장 아이콘 추출, ICO 각 프레임의 투명도, ZIP 내 아이콘 일치 확인 완료. 기존 실행 중인 앱은 종료하지 않았으며 이번 아이콘 변경에서 게임 실행·클라우드 전환은 재검증하지 않음.
+
+## Playnite와 독립 실행 (2026-10-04)
+
+- 이전 독립 실행 배포: `artifacts/HoleInOne-TeamTest-20261004-independent.zip`. 현재는 위 전용 아이콘 ZIP 사용. 새 폴더에 전체 압축 해제 후 `Start-HoleInOne.cmd` 실행. 이전 배포 폴더에 덮어쓰지 않음.
+- 실행 파일은 `HoleInOne.exe`, 브라우저 보조 실행 파일은 `HoleInOne.BrowserProcess.exe`. 제품명·작업 표시줄 식별자·중복 실행 감지·명령 통신·`holeinone://` 링크·자동 시작 등록을 원본 Playnite와 분리함.
+- 팀 테스트 사용자 데이터는 기존 `%LOCALAPPDATA%\HoleInOne-TeamTest`를 유지함. 기존 팀 테스트 앱을 먼저 종료하고 새 시작 파일을 사용하면 스토어 연동·서버 주소 설정을 유지함. 같은 사용자 데이터 폴더를 쓰는 구버전과 신버전 홀인원은 동시에 실행하지 않음.
+- 설치형 기본 설정·라이브러리는 `%APPDATA%\HoleInOne`, 임시 파일은 `%TEMP%\HoleInOne` 사용. 포터블 기본 저장 위치와 명시적인 `--userdatadir`는 기존 방식 유지. 원본 Playnite 데이터를 자동 복사하거나 원본 등록을 수정하지 않음.
+- 내부 SDK·소스 네임스페이스와 로그 파일명 `playnite.log`는 호환성을 위해 유지함. 현재 배포는 홀인원 전용 포터블 빌드이며 원본 Playnite 설치기와 업데이트 스크립트는 사용하지 않음.
+- 독립 실행 검사 5개 통과: Playnite 이름의 기존 프로세스가 실행 중인 상태에서 시작, 제품 식별, 중복 실행 전달, 기존 등록 보존, 독립 종료. 런처 회귀 검사 95개 통과. 이번 변경으로 실제 클라우드 게임·세이브 전환을 다시 검증한 것은 아님.
+
+```powershell
+./build/Build-HoleInOne.ps1 -OutputDirectory artifacts/HoleInOne-Independent
+./build/Prepare-HoleInOneTools.ps1 -OutputDirectory artifacts/HoleInOne-Independent
+./tests/Identity/Identity.Tests.ps1 -ApplicationDirectory artifacts/HoleInOne-Independent
+```
+
+독립 실행 검사는 별도 임시 사용자 데이터로 실행하며 기존 HoleInOne을 닫은 상태에서 수행함. Windows 브라우저 프로세스 통신이 허용되는 환경이 필요함. 이전 Playnite 이름의 실행 파일이 남은 폴더로 빌드·패키징하면 혼합 배포 방지를 위해 오류 처리함.
+
+## 팀원 PC용 개발 배포 (2026-10-04)
+
+- 이전 주소 설정 UI 배포: `artifacts/HoleInOne-TeamTest-20261004-settings.zip` (약 264MB). 현재는 위 독립 실행 ZIP 사용. Windows 10/11 x64에서 전체 압축 해제 후 `Start-HoleInOne.cmd` 실행.
+- 서버: `http://13.158.18.241:5010/`. EC2가 켜져 있고 보안 그룹 TCP 5010에 팀원 공인 IP(`/32`)가 허용되어야 함. 현재 PC에서 인증된 health 응답 및 인증 없는 요청 401 확인 완료.
+- `holeinone.development.json`에 주소·공동 접속 토큰 포함. AWS 키·Backend 설치 불필요. HoleInOne 회원 로그인은 사용하지 않으며 Steam/Epic은 본인 계정으로 연동함.
+- 사용자 데이터는 `%LOCALAPPDATA%\HoleInOne-TeamTest`에 저장. 연결 문제는 PowerShell에서 `Test-Backend.ps1` 실행 후 확인.
+- 현재 클라우드 설정 게임은 Slay the Spire 2(`steam-2868840`). 팀원 PC의 실제 게임·다운로드·세이브 전환은 수동 검증 필요.
+- EC2 IP 변경 시 서버 PublicUrl은 Backend 시작 시 자동 갱신됨. 앱 메뉴 → 라이브러리 → HoleInOne 설정 → 개발 서버 주소에서 새 IP 입력 → 연결 확인 → 주소 저장. IP만 입력하면 `http://IP:5010/`으로 처리함. 다음 게임 실행부터 사용하며 재실행 후에도 유지됨. 클라우드 게임 실행 중에는 주소 저장을 막음.
+- 주소는 사용자 데이터의 `holeinone.development-address.json`에 별도로 저장하고, 패키지의 기본 주소보다 우선 적용함. 접속 토큰·스토어 설정·다운로드 경로는 유지. 정식 배포에서는 주소 변경 UI와 개발용 주소 덮어쓰기를 사용하지 않음.
+- HTTP·공동 토큰 방식의 팀 개발용 Debug 빌드이므로 지정된 팀원에게만 공유하고 공개 배포하지 않음.
+
+재생성: `Build-HoleInOne.ps1 -Configuration Debug -OutputDirectory artifacts/HoleInOne-TeamTest` → 같은 폴더에 `Prepare-HoleInOneTools.ps1` 적용 → `Prepare-DevelopmentPackage.ps1 -ApplicationDirectory <앱 폴더> -ConfigurationFile <개발 설정 파일> -OutputZip <새 ZIP 경로>` 실행. 패키지 스크립트는 사용자 데이터·서버 설정·개인 키 혼입과 기존 ZIP 덮어쓰기를 거부함.
+
+주소 설정 UI 추가 후 런처 검사 78개 통과. 새 Debug 빌드의 실제 x86 .NET Framework 코드로 IP 단독 입력 처리와 EC2 인증 연결 확인 성공. 새 ZIP 필수 파일·개인 키 및 사용자 설정 혼입 검사 완료.
+
+## 향후 정식 서비스 빌드
+
+정식 서비스 전환 계획은 [Backend 배포 Plan](../Backend/DEPLOYMENT_PLAN.md) 참고. 외부 배포 빌드는 `Build-HoleInOne.ps1 -Configuration Release -Distribution -ServiceUrl <실제 HTTPS 주소>`로 생성함. 이 모드는 `holeinone.service.json` 누락 시 개발 PC 주소로 대체하지 않고 시작 오류를 표시함. 기본 개발 빌드는 기존 로컬 실행을 유지함. `Set-DemoService.ps1`는 로그인 기능을 제공하는 HoleInOne 서버의 상태 응답까지 확인하며, 개발 빌드 자체를 Distribution 빌드로 변경하지는 않음.
+
 Playnite 데스크톱 기반으로 클라우드 플레이와 로컬 다운로드를 연결함. Steam·Epic 계정 연동은 내장되어 있으며 외부 애드온을 설치하지 않음.
 
 ## 구현된 동작
@@ -7,9 +50,14 @@ Playnite 데스크톱 기반으로 클라우드 플레이와 로컬 다운로드
 - 미설치 게임의 플레이: 선택한 게임의 AWS Stream URL을 Backend에서 받아 웹뷰 표시와 다운로드를 시작함.
 - Steam: Steam 설치 확인 1회 후 다운로드. Epic: Legendary로 지정 폴더에 자동 다운로드.
 - 설치된 게임: 바로 로컬 실행. 같은 게임의 클라우드 창이 열려 있으면 그 창을 활성화함.
-- 슬더스2: 모닥불 알림 + 설치 완료 → 세이브 요청 → 서버 보관 완료 → GameLoader 설치·모드 설정 활성화·1회용 전환 파일 작성 → 웹뷰 종료 → 로컬 실행.
-- 다른 게임: 클라우드 플레이·다운로드만 진행하며 세이브 이전과 자동 로컬 전환은 하지 않음.
-- 클라우드 창을 직접 닫으면 자동 전환을 중단하고 이미 시작한 다운로드는 계속 진행함.
+- 모든 클라우드 게임: 설치 완료 시 게임 화면 오른쪽 위에 토스트 형태로 안내 문구·전환 버튼·60분 타이머 표시. 게임 화면 크기를 줄이지 않고 겹쳐 표시하며, 토스트 밖 입력은 게임에 전달함. 전환 또는 만료까지 유지하며 만료 시 웹뷰 종료, 로컬 게임은 자동 실행하지 않음.
+- 전환 버튼: AWS 내보내기 예약 → 클라우드 세션 종료 → Backend에서 세이브 선별 → 홀인원에서 검증·기존 파일 백업·복원 → 웹뷰 종료 → 로컬 실행. 세이브 없음이 확인된 경우만 복원을 생략함.
+- 게임 시작 전 다운로드가 완료되어도 설치 상태를 계속 관찰해 전환 버튼을 표시함. 설치 완료 정보는 경로·설치됨·설치 중 해제 순으로 반영하며, 스토어 갱신 중 일시적인 상태 변경으로 관찰을 종료하지 않음. 웹페이지 로딩과 무관하게 버튼을 가장 위에 표시함.
+- 미시작/준비 중인 클라우드 세션 또는 저장 데이터 없음이 확인되면 세이브 복원 없이 웹뷰를 닫고 로컬 실행함. 이 경우 Steam 계정과 세이브 목적지 검사도 생략함. 실행 중이며 파일 유무를 모르는 경우에는 Backend에서 AWS 결과를 확인해야 함.
+- 새 전환은 GameLink·GameLoader·Ludusavi 실행 파일을 사용하지 않음. 게임별 저장 위치 목록만 Backend에 포함함. 지원하지 않는 게임·저장 경로는 전환 전에 오류로 처리함.
+- 클라우드 창을 직접 닫으면 전환을 중단하고 Backend에 클라우드 종료를 요청함. 이미 시작한 다운로드는 계속 진행함.
+- 게임 웹뷰는 주소창·제목줄·테두리·브라우저 우클릭 메뉴 없는 전체화면이며 작업표시줄 영역까지 덮음. Alt+F4로 종료 가능하며 Alt+Tab으로 다른 앱으로 전환하면 최상위 표시를 해제함. 게임 웹뷰의 Leave Site 확인은 자동 통과하고 로그인 웹뷰는 기존 동작을 유지함.
+- 설치 완료 상태를 먼저 저장·표시하고 용량 계산은 백그라운드로 진행함. Steam 완료 감지는 대상 게임의 설치 정보만 1초 간격으로 확인하며 일시적인 파일 읽기 실패는 재시도함. 상세 화면의 설치 완료 상태 변경 알림도 반영함.
 - 설치 버튼은 상세 화면에만 표시함. 목록·검색·우클릭 메뉴는 플레이로 연결함.
 - Playnite 업데이트·온라인 애드온·외부 확장 및 스크립트 로딩을 비활성화함. Steam·Epic은 내장 모듈로 등록함.
 
@@ -19,28 +67,59 @@ Windows x64, Visual Studio의 .NET 데스크톱 개발 도구 필요. 앱은 .NE
 
 ```powershell
 Set-Location D:/Project/HoleInOne/PlaynitePorting
-./build/Build-HoleInOne.ps1
-./build/Prepare-HoleInOneTools.ps1
-& ./artifacts/HoleInOne/Playnite.DesktopApp.exe --userdatadir "D:/Project/HoleInOne/PlaynitePorting/artifacts/UserData" --nolibupdate
+./build/Build-HoleInOne.ps1 -OutputDirectory artifacts/HoleInOne-Independent
+./build/Prepare-HoleInOneTools.ps1 -OutputDirectory artifacts/HoleInOne-Independent
+& ./artifacts/HoleInOne-Independent/HoleInOne.exe --userdatadir "D:/Project/HoleInOne/PlaynitePorting/artifacts/UserData" --nolibupdate
 ```
 
-준비 스크립트는 Legendary 0.21.1 공식 바이너리를 SHA-256으로 확인하고 라이선스·해당 버전 소스를 함께 보관함. GameLoader는 기본적으로 형제 저장소의 `GameLoader/dist/GameLoader`에서 가져옴. 다른 위치라면 `-GameLoaderDirectory <경로>` 지정. GameLoader DLL과 manifest를 앱의 `Mods/GameLoader`에 준비하며, 실제 게임에는 슬더스2 전환 시 복사함.
+준비 스크립트는 Legendary 0.21.1 공식 바이너리를 SHA-256으로 확인하고 라이선스·해당 버전 소스를 함께 보관함. GameLoader 준비는 `-GameLoaderDirectory`를 명시한 과거 모드 방식 빌드에서만 수행함. 새 AWS 전환에는 필요하지 않음. 두 스크립트 모두 `-OutputDirectory`로 실행 중인 앱과 다른 빌드 폴더 지정 가능함.
+
+AWS 전환 설정은 [EXPORT_HANDOFF.md](../Backend/EXPORT_HANDOFF.md) 참고. 로컬 설정의 S3 경로는 `s3://holeinone-save/holeinone/exports/`이며 Windows 클라우드 실행 환경 조회 완료. 사용자가 클라우드 게임 실행 후 Steam이 기존 세이브를 동기화한다고 확인하여 테스트용 `Export:Enabled=true`, `StartsWithoutSaves=true`로 설정함. Backend 재시작 필요. 세션 시작 후 생성·변경된 파일만 내보내므로 이전 슬롯도 포함되는지 실제 검증 필요. 세이브 적용 후 자동으로 저장 슬롯을 선택하는 기능은 포함하지 않음.
+
+토스트 UI 빌드: `artifacts/ExportHandoffToast/Playnite.DesktopApp.exe`. 기존 앱 종료 후 같은 사용자 데이터 경로를 지정해 실행함. UI 검사 10개 통과(게임 화면 크기 유지, 토스트 밖 입력 통과, 좁은 창, 중복 클릭, 타이머·종료·정리 포함). 실제 스트리밍 페이지 위 표시와 마우스 잠금 상태에서 전환 버튼 조작은 수동 확인 필요.
+
+최신 세이브 경로·오류 진단 수정 빌드는 `artifacts/ExportHandoffDiagnostics/Playnite.DesktopApp.exe`. Steam Remote Storage 파일도 현재 로컬 Steam 계정으로 복원하며, 실패 단계와 요청 ID를 토스트에 표시함. Backend도 재시작해야 새 내보내기 상태 대기·Steam 저장 위치 규칙이 적용됨. 실제 ZIP의 109개 파일 선택을 확인했으며 게임 내 불러오기 결과는 재테스트 필요.
 
 1. Backend를 실행하고 실제 AWS 리전·스트림 그룹·게임별 애플리케이션을 설정함. 기본 `Streaming:Enabled=false`에서는 클라우드 플레이가 시작되지 않음.
 2. 홀인원 메뉴 → 라이브러리 → **HoleInOne 설정**에서 Steam·Epic 연동 설정을 선택함. Backend 주소·토큰·Epic 다운로드 폴더는 사용자 설정 화면에 표시하지 않음.
 3. **Steam 연동 설정** 또는 **Epic 연동 설정**을 열면 원본 Playnite 애드온 설정 화면이 표시됨. 계정 연결·미설치 게임 가져오기를 켜고 인증을 완료한 뒤 **확인**을 누름. Steam 로그인 성공 시 인증 창은 자동으로 닫힘. Epic 자동 다운로드는 같은 인증을 사용하므로 Legendary에서 별도로 로그인하지 않음.
 4. 메뉴에서 라이브러리를 새로고침하면 설치된 게임과 계정의 미설치 보유 게임이 표시됨.
-5. 미설치 게임의 플레이 버튼을 누름. Steam은 설치 확인 창을 한 번 승인함. AWS 스트리밍 페이지의 시작 조작이 표시되면 진행함.
+5. 미설치 게임의 플레이 버튼을 누름. Steam 저장 위치가 하나면 바로 설치를 요청하고, 여러 개면 HoleInOne에서 위치를 선택함. AWS 스트리밍 페이지의 시작 조작이 표시되면 진행함.
+
+Steam 다운로드는 `steam.exe -silent +app_install <AppID> <volumeindex>`로 요청함. Steam에 등록된 저장 위치만 사용하며, 위치 선택을 취소하면 다운로드하지 않음. Steam의 설치 확인 URL은 호출하지 않음. 로그인·클라이언트 업데이트 등의 Steam 화면까지 생략하는 것은 보장하지 않음. 2분 안에 설치 파일 갱신이나 설치 완료가 확인되지 않으면 HoleInOne에서 실패를 안내함. 명령은 Steam 내부 인터페이스이므로 클라이언트 업데이트에 따른 호환성 확인이 필요함. 자동 검사와 빌드 외에 실제 계정의 다운로드·창 표시 여부는 별도 실기기 검증 대상임.
 
 앱 설정은 지정한 사용자 데이터 폴더의 `holeinone.json`, 원본 스토어 연동 설정·인증 정보는 `ExtensionsData` 아래 해당 모듈 폴더에 저장됨. Steam 웹뷰 쿠키와 Epic 다운로드 도구의 `HoleInOne/Epic` 정보도 같은 사용자 데이터 폴더를 사용함. 기존 자체 연동에서 원본 애드온으로 바뀌었으므로 원본 설정 화면에서 최초 인증이 필요함. 설정·인증 데이터는 공유하거나 저장소에 추가하지 않아야 함.
 
-현재 MVP의 Backend 주소·공통 토큰은 개발자가 로컬 연결을 준비할 때 `holeinone.json`의 `BackendUrl`·`BearerToken`에 설정함. Epic 다운로드 경로는 같은 파일의 `DownloadDirectory`를 사용하고, 지정하지 않으면 `%LOCALAPPDATA%/HoleInOne/Games`를 사용함. 사용자가 직접 입력하지 않으며, 연동 설정 창을 열고 닫아도 이 값들은 변경하지 않음. 공통 토큰 방식은 개발 테스트용이며 사용자별 인증·자동 발급은 아직 구현하지 않았음.
+개발 모드는 `holeinone.json`의 `BackendUrl`·`BearerToken`을 사용함. 사용자 로그인 배포는 실행 파일 옆 `holeinone.service.json`의 공개 HTTPS 주소를 사용하며, 기존 개발 주소·공통 토큰을 무시함. 이 배포에서는 앱 시작 시 아이디·비밀번호로 로그인해야 하며, 계정별 토큰은 프로세스 메모리에만 보관함. 로그인은 기본 12시간 유효하고 앱이나 서버를 다시 시작하면 다시 로그인함. 설정 화면에서 계정을 확인하거나 로그아웃할 수 있으며 클라우드 게임이 열려 있으면 먼저 닫도록 안내함.
+
+Epic 다운로드 경로는 사용자 설정 파일의 `DownloadDirectory`를 사용하고, 지정하지 않으면 `%LOCALAPPDATA%/HoleInOne/Games`를 사용함. Steam/Epic 연동은 게임 소유권·다운로드를 위한 별도 로그인임. HoleInOne 로그인으로 스토어 로그인까지 대체하지 않음.
+
+## 로그인부터 시작하는 시연 배포
+
+백엔드 계정 생성과 CloudFront 구성은 [Backend 배포 절차](../Backend/README.md#도메인-없는-로그인-시연-배포) 참고.
+
+앱 빌드와 배포 주소 확정은 개발 PC에서 한 번 수행함.
+
+```powershell
+Set-Location D:\Project\HoleInOne\PlaynitePorting
+.\build\Build-HoleInOne.ps1 -OutputDirectory .\artifacts\HoleInOne-Login
+.\build\Prepare-HoleInOneTools.ps1 -OutputDirectory .\artifacts\HoleInOne-Login
+.\build\Set-DemoService.ps1
+```
+
+마지막 명령에서 실제 CloudFront HTTPS 주소를 입력함. 서버 건강 상태 확인에 성공하면 주소만 담은 `holeinone.service.json`을 생성함. 비밀번호·공용 토큰·AWS 키·개발 PC 사용자 데이터는 배포 폴더에 넣지 않음. 새 빌드 때는 `Build-HoleInOne.ps1 -ServiceUrl <실제 HTTPS 주소>`로 동일 설정 가능함.
+
+`artifacts/HoleInOne-Login` 폴더 전체를 노트북으로 복사함. **주소 설정 전의 폴더는 아직 로그인 시연용 완성본이 아님.** 노트북에서는 `HoleInOne.exe`를 실행하고 시연 계정으로 로그인함. Steam 클라이언트와 해당 게임 소유 계정도 미리 준비함. 설치된 게임은 바로 로컬 실행되므로, 다운로드와 클라우드 전환 시연은 미설치 게임으로 시작해야 함. 기존 게임·세이브를 임의 삭제하지 말고 시연 준비 전에 백업함.
+
+리허설: 앱 실행 → HoleInOne 로그인 → Steam/Epic 연동 및 라이브러리 새로고침 → 미설치 게임 플레이 → 스트리밍 중 게임 저장 → 다운로드 완료 → 로컬 전환 → 같은 저장 불러오기. 앱 실행과 로그인만으로 마지막 단계까지 성공한 것으로 간주하지 않음. 시연 당일 SSH·pem·공용 토큰 입력은 필요하지 않지만, 운영자가 미리 EC2와 GameLift 스트리밍 용량을 준비해야 함.
+
+2026-10-04 확인: 로그인 API·계정 격리 30개, 기존 Backend 44개, AWS export 모의 전환 50개, 런처 계약 38개 검사 통과. Windows 앱 Debug 빌드와 linux-x64 백엔드 publish 완료. 실제 AWS 로그인·게임 실행·최종 저장 불러오기는 미검증임. 기존 의존성 AngleSharp 0.9.9, LiteDB 4.1.4, Newtonsoft.Json 10.0.3의 NuGet 보안 경고가 남아 있으며, 이번 로그인 변경에서 라이브러리 업그레이드는 수행하지 않음. 배포 폴더에는 서버 주소 확정 전 `holeinone.service.json`이 없으므로 아직 시연용 완성본으로 배포하지 않음.
 
 Steam 2.44·Epic 2.30 원본 소스를 함께 빌드함. Steam의 Playnite 서버 조회는 Steam 직접 조회로 대체했고 Epic 자동 다운로드만 Legendary를 유지함. 원본 버전과 변경점은 [UPSTREAM.md](source/BuiltinLibraries/UPSTREAM.md) 참고.
 
 게임 ID는 Steam `steam-<AppID>`, Epic `epic-<AppName>` 형식임. Backend에 해당 게임의 AWS 애플리케이션이 등록되어 있어야 함. 미등록 게임을 다른 게임으로 대신 실행하지 않음. 자세한 설정은 [Backend README](../Backend/README.md) 참고.
 
-슬더스2 v0.107.1은 전환 직전에 현재 Steam 계정의 `SlayTheSpire2/steam/<SteamID64>/settings.save`에서 `mod_settings.mods_enabled=true`로 설정하고 GameLoader를 활성화함. 최초 동의 화면 없이 모드를 로드하기 위한 설정이며, 기존 화면·음량·다른 모드의 개별 설정은 유지함. 설정 파일이 없으면 현재 게임의 설정 schema 5로 생성함. `nomods` 실행 옵션은 제거해야 하며, 게임 업데이트로 설정 형식이 바뀌면 다시 확인해야 함. 클라우드에는 GameLink만, 로컬에는 GameLoader를 사용함.
+이전 슬더스2 모닥불·GameLoader 전환 코드는 호환성 검증용으로 남아 있으나 현재 데스크톱 전환에서는 호출하지 않음. 새 전환은 모드 활성화 설정·1회용 GameLoader 파일을 작성하지 않음.
 
 ## 검증
 

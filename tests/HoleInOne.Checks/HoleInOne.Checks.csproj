@@ -8,6 +8,11 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="StoreChecks.cs" />
+    <Compile Include="LauncherSettingsChecks.cs" />
+    <Compile Include="../../source/Playnite/HoleInOne/LauncherSettings.cs" Link="LauncherSettings.cs" />
+    <Compile Include="../../source/Playnite/HoleInOne/ServiceConfiguration.cs" Link="ServiceConfiguration.cs" />
+    <Compile Include="../../source/Playnite/HoleInOne/HandoffDeadline.cs" Link="HandoffDeadline.cs" />
+    <Compile Include="../../source/Playnite/HoleInOne/ExportSaveInstaller.cs" Link="ExportSaveInstaller.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/Sts2ModSetup.cs" Link="Sts2ModSetup.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/StoreFiles.cs" Link="StoreFiles.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/BackendConnection.cs" Link="BackendConnection.cs" />

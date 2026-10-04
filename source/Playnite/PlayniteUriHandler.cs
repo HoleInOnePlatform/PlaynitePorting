@@ -35,9 +35,9 @@ namespace Playnite
                 throw new ArgumentNullException("Source cannot be null");
             }
 
-            if (source.Equals("playnite", StringComparison.OrdinalIgnoreCase))
+            if (source.Equals(ApplicationIdentity.UriScheme, StringComparison.OrdinalIgnoreCase))
             {
-                throw new Exception($"\"playnite\" source is reserved source.");
+                throw new Exception($"\"holeinone\" source is reserved source.");
             }
 
             if (Handlers.Keys.FirstOrDefault(a => a.Equals(source, StringComparison.OrdinalIgnoreCase)) != null)
@@ -62,7 +62,7 @@ namespace Playnite
             var split = uri.Split(uriSplitter, StringSplitOptions.RemoveEmptyEntries);
             if (split.Length < 2)
             {
-                throw new Exception("playnite:// uri missing parameters.");
+                throw new Exception("holeinone:// uri missing parameters.");
             }
 
             var source = split[1];

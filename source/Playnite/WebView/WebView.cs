@@ -25,6 +25,7 @@ namespace Playnite.WebView
         public event EventHandler NavigationChanged;
         public event EventHandler<WebViewLoadingChangedEventArgs> LoadingChanged;
         public Window WindowHost => window;
+        public System.Windows.Controls.Panel OverlayHost => window.PanelOverlay;
 
         public WebView(WebViewSettings settings, bool useCompositionRenderer = false)
         {
@@ -146,6 +147,11 @@ namespace Playnite.WebView
         public void EnableGameInput()
         {
             window.EnableGameInput();
+        }
+
+        public void EnableGameMode()
+        {
+            window.EnableGameMode();
         }
 
         public bool? OpenDialog()

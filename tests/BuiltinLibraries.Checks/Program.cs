@@ -22,6 +22,7 @@ internal static class Program
             CheckLogin("empty token is not completion", ValidPage.Replace("fixture-token", ""), "https://store.steampowered.com/explore/", false);
             CheckLogin("changed markup is not completion", "<html>unrecognized</html>", "https://store.steampowered.com/explore/", false);
             Console.WriteLine("6 upstream Steam authentication checks passed.");
+            SteamInstallChecks.Run();
             return 0;
         }
         catch (Exception e) { Console.Error.WriteLine(e); return 1; }

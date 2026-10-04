@@ -69,7 +69,7 @@ namespace SteamLibrary.Services
             return result;
         }
 
-        internal static GameMetadata GetInstalledGameFromFile(string path)
+        internal static GameMetadata GetInstalledGameFromFile(string path, bool requireReady = false)
         {
             var kv = new KeyValue();
             using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
@@ -79,7 +79,8 @@ namespace SteamLibrary.Services
 
             if (!kv["StateFlags"].Value.IsNullOrEmpty() && Enum.TryParse<AppStateFlags>(kv["StateFlags"].Value, out var appState))
             {
-                if (!appState.HasFlag(AppStateFlags.FullyInstalled))
+                if (!appState.HasFlag(AppStateFlags.FullyInstalled) ||
+                    (requireReady && appState != AppStateFlags.FullyInstalled))
                 {
                     return null;
                 }
@@ -124,6 +125,20 @@ namespace SteamLibrary.Services
             };
 
             return game;
+        }
+
+        internal static GameMetadata GetInstalledGame(uint appId)
+        {
+            // Read just this installation, using the same manifest validation as library import.
+            foreach (var folder in GetLibraryFolders())
+            {
+                var path = Path.Combine(folder, "steamapps", $"appmanifest_{appId}.acf");
+                if (!File.Exists(path)) continue;
+                var game = GetInstalledGameFromFile(path, requireReady: true);
+                if (game != null && !string.IsNullOrEmpty(game.InstallDirectory) && game.GameId == appId.ToString())
+                    return game;
+            }
+            return null;
         }
 
         internal static List<GameMetadata> GetInstalledGamesFromFolder(string path)

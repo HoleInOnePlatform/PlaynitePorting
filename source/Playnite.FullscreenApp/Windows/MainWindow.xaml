@@ -15,7 +15,7 @@
         mc:Ignorable="d"
         Style="{StaticResource MainWindowStyle}"
         d:DesignStyle="{StaticResource MainWindowStyle}"
-        Title="Playnite"
+        Title="HoleInOne"
         Width="{Binding WindowWidth, Mode=TwoWay}"
         Height="{Binding WindowHeight, Mode=TwoWay}"
         Left="{Binding WindowLeft, Mode=TwoWay}"             

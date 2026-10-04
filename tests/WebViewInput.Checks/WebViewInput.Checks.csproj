@@ -3,11 +3,13 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net462</TargetFramework>
     <UseWpf>true</UseWpf>
+    <UseWindowsForms>true</UseWindowsForms>
     <PlatformTarget>x86</PlatformTarget>
     <LangVersion>12</LangVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../source/Playnite/Playnite.csproj" />
+    <Compile Include="../../source/Playnite.DesktopApp/HoleInOne/DownloadHandoffPrompt.cs" Link="DownloadHandoffPrompt.cs" />
   </ItemGroup>
 </Project>

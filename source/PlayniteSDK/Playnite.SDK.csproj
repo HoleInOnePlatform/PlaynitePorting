@@ -17,8 +17,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Playnite.DesktopApp" />
-    <InternalsVisibleTo Include="Playnite.FullscreenApp" />
+    <InternalsVisibleTo Include="HoleInOne" />
+    <InternalsVisibleTo Include="HoleInOne.Fullscreen" />
     <InternalsVisibleTo Include="Playnite.Tests" />
     <InternalsVisibleTo Include="Playnite.DesktopApp.Tests" />
     <InternalsVisibleTo Include="Playnite.FullscreenApp.Tests" />

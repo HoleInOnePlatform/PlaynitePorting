@@ -83,7 +83,7 @@ namespace SteamLibrary
                 yield break;
             }
 
-            yield return new SteamInstallController(args.Game);
+            yield return new SteamInstallController(args.Game, PlayniteApi);
         }
 
         public override IEnumerable<UninstallController> GetUninstallActions(GetUninstallActionsArgs args)

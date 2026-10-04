@@ -215,6 +215,17 @@ namespace Playnite.DesktopApp
             MainModel.OpenView();
             CurrentNative.MainWindow = MainModel.Window.Window;
 
+            try
+            {
+                if (!HoleInOne.LauncherLogin.EnsureSignedIn(Playnite.HoleInOne.LauncherSettings.Load()))
+                { CurrentNative.Shutdown(); return; }
+            }
+            catch (Exception)
+            {
+                System.Windows.MessageBox.Show("서비스 연결 설정을 확인할 수 없습니다. 앱을 다시 설치해 주세요.", "HoleInOne");
+                CurrentNative.Shutdown(); return;
+            }
+
             if (isFirstStart)
             {
                 await MainModel.UpdateLibrary(false, true, false);
