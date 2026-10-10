@@ -1,5 +1,9 @@
 # HoleInOne 개발 실행
 
+## V5 세션 사전 준비 (2026-10-10)
+
+플랫폼 시작 시 Steam을 준비하고 플레이 시 기존 전체화면 웹뷰로 연결합니다. Backend 동반 배포·V5 설정·검증 범위는 [V5_PREWARM.md](V5_PREWARM.md)를 참고하세요.
+
 ## 홀인원 전용 아이콘 (2026-10-04)
 
 - 최신 공유 파일: `artifacts/HoleInOne-TeamTest-20261004-icon.zip`. 기존 홀인원을 모두 종료하고 새 폴더에 전체 압축 해제 후 `Start-HoleInOne.cmd` 실행. 팀 테스트 사용자 데이터 경로는 그대로 유지함.
