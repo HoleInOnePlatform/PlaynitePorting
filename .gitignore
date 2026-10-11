@@ -248,6 +248,7 @@ FakesAssemblies/
 _Pvt_Extensions
 
 # Paket dependency manager
+.packages/
 .paket/paket.exe
 paket-files/
 

@@ -38,11 +38,18 @@ namespace Playnite.DesktopApp.HoleInOne
             CloudSession session = null;
             DownloadHandoffPrompt prompt = null;
             Game localGame = null;
+            SteamCloudBridge steamCloud = null;
             try
             {
                 var key = BuiltinStoreLibrary.GameKey(game);
                 var settings = LauncherSettings.Load();
                 if (!LauncherLogin.EnsureSignedIn(settings)) return;
+                if (settings.SteamCloudUploadEnabled && key.StartsWith("steam-", StringComparison.Ordinal) && uint.TryParse(key.Substring(6), out var steamAppId))
+                {
+                    // Capture the remote baseline before cloud gameplay, not after the export arrives.
+                    steamCloud = new SteamCloudBridge();
+                    await steamCloud.PrepareAsync(steamAppId, play.Closed.Token);
+                }
                 backend = new BackendConnection(settings.BackendUrl, LauncherLogin.TokenFor(settings));
                 try { session = await backend.CreateSessionAsync(play.Closed.Token, key); }
                 catch (LoginRequiredException) when (settings.RequireLogin)
@@ -129,6 +136,19 @@ namespace Playnite.DesktopApp.HoleInOne
                             if (game.IsRunning || !game.IsInstalled || game.IsInstalling ||
                                 !string.Equals(game.InstallDirectory, roots["install"], StringComparison.OrdinalIgnoreCase))
                                 throw new InvalidOperationException("로컬 게임 상태 또는 설치 위치가 변경됨. 전환 중단.");
+                            // Keep the archive/backups when Steam upload fails; never launch through a known conflict.
+                            if (steamCloud != null)
+                            {
+                                prompt.SetBusy(true, "저장된 진행 상황을 준비하는 중입니다.");
+                                await steamCloud.SyncAsync(archive, status.Sha256, play.Closed.Token);
+                            }
+                            prompt.ThrowIfExpired();
+                            game = editor.Database.Games.Get(game.Id) ?? throw new InvalidOperationException("라이브러리에서 게임이 제거됨.");
+                            if (game.IsRunning || game.IsLaunching || !game.IsInstalled || game.IsInstalling ||
+                                !string.Equals(game.InstallDirectory, roots["install"], StringComparison.OrdinalIgnoreCase))
+                                throw new InvalidOperationException("로컬 게임 상태 또는 설치 위치가 변경됨. 전환 중단.");
+                            if (steamId != null && SteamCloudBridge.ActiveSteamId() != steamId)
+                                throw new InvalidOperationException("Steam 계정이 변경되어 전환을 중단함.");
                             prompt.SetBusy(true, "기존 세이브를 백업하고 클라우드 세이브를 적용하는 중입니다.");
                             await Task.Run(() => ExportSaveInstaller.Apply(archive, key, roots, steamId, accountId, Path.Combine(work, "restore"), play.Closed.Token), play.Closed.Token);
                             // The receipt is cleanup only: failure must not invalidate successfully applied saves.
@@ -175,6 +195,7 @@ namespace Playnite.DesktopApp.HoleInOne
                     catch (Exception error) { LogManager.GetLogger().Warn(error, "Cloud session termination request failed."); }
                 }
                 backend?.Dispose();
+                steamCloud?.Dispose();
                 play.Closed.Dispose();
                 ActiveStreamCount--;
             }
