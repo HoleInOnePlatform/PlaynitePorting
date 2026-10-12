@@ -30,10 +30,12 @@ namespace Playnite.DesktopApp.HoleInOne
                     try
                     {
                         var settings = LauncherSettings.Load();
+                        await CloudPreparation.ResetAsync();
                         using (var backend = new BackendConnection(settings.BackendUrl, LauncherLogin.TokenFor(settings)))
                             await backend.LogoutAsync(CancellationToken.None);
                         LauncherLogin.Forget(); Close();
                         if (!LauncherLogin.EnsureSignedIn(settings)) Application.Current.Shutdown();
+                        else CloudPreparation.Begin();
                     }
                     catch (Exception)
                     {
@@ -93,19 +95,23 @@ namespace Playnite.DesktopApp.HoleInOne
                 catch (Exception) { status.Text = "연결 실패. 서버 주소·EC2 실행 상태·5010 접속 허용을 확인해 주세요."; }
                 finally { check.IsEnabled = save.IsEnabled = address.IsEnabled = true; }
             };
-            save.Click += (sender, args) =>
+            save.Click += async (sender, args) =>
             {
                 if (InstantPlayCoordinator.ActiveStreamCount != 0)
                 { status.Text = "클라우드 게임 창을 닫은 뒤 서버 주소를 변경해 주세요."; return; }
                 try
                 {
                     var url = DevelopmentServiceAddress.Normalize(address.Text);
+                    save.IsEnabled = check.IsEnabled = address.IsEnabled = false;
+                    await CloudPreparation.ResetAsync();
                     LauncherSettings.SaveDevelopmentBackendAddress(url);
+                    CloudPreparation.Begin();
                     address.Text = url;
-                    status.Text = "주소 저장 완료. 다음 게임 실행부터 적용되며 앱을 다시 켜도 유지됨.";
+                    status.Text = "주소 저장 완료. 새 서버에서 게임을 준비합니다. 앱을 다시 켜도 유지됩니다.";
                 }
                 catch (InvalidDataException error) { status.Text = error.Message; }
                 catch (Exception) { status.Text = "주소를 저장하지 못함. 사용자 데이터 폴더의 쓰기 권한을 확인해 주세요."; }
+                finally { save.IsEnabled = check.IsEnabled = address.IsEnabled = true; }
             };
         }
 

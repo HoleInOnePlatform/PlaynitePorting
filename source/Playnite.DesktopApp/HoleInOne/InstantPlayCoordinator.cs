@@ -36,6 +36,7 @@ namespace Playnite.DesktopApp.HoleInOne
             EventHandler closed = (sender, args) => play.Closed.Cancel();
             BackendConnection backend = null;
             CloudSession session = null;
+            PreparedSessionManager preparation = null;
             DownloadHandoffPrompt prompt = null;
             Game localGame = null;
             SteamCloudBridge steamCloud = null;
@@ -51,15 +52,18 @@ namespace Playnite.DesktopApp.HoleInOne
                     await steamCloud.PrepareAsync(steamAppId, play.Closed.Token);
                 }
                 backend = new BackendConnection(settings.BackendUrl, LauncherLogin.TokenFor(settings));
-                try { session = await backend.CreateSessionAsync(play.Closed.Token, key); }
+                preparation = CloudPreparation.Get(settings);
+                try { session = await preparation.PlayAsync(key, play.Closed.Token); }
                 catch (LoginRequiredException) when (settings.RequireLogin)
                 {
                     // A backend restart invalidates in-memory tokens. Reauthenticate before retrying creation.
+                    await CloudPreparation.ResetAsync();
                     LauncherLogin.Forget();
                     if (!LauncherLogin.EnsureSignedIn(settings)) return;
                     backend.Dispose();
                     backend = new BackendConnection(settings.BackendUrl, LauncherLogin.TokenFor(settings));
-                    session = await backend.CreateSessionAsync(play.Closed.Token, key);
+                    preparation = CloudPreparation.Get(settings);
+                    session = await preparation.PlayAsync(key, play.Closed.Token);
                 }
                 play.View = new Playnite.WebView.WebView(new WebViewSettings { WindowWidth = 1280, WindowHeight = 800 });
                 play.View.EnableGameMode();
@@ -194,6 +198,7 @@ namespace Playnite.DesktopApp.HoleInOne
                     try { await backend.StopCloudAsync(session.SessionId, CancellationToken.None); }
                     catch (Exception error) { LogManager.GetLogger().Warn(error, "Cloud session termination request failed."); }
                 }
+                if (session != null && preparation != null) await preparation.PlayFinishedAsync();
                 backend?.Dispose();
                 steamCloud?.Dispose();
                 play.Closed.Dispose();

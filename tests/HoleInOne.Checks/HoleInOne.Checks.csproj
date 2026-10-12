@@ -7,6 +7,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="PrewarmChecks.cs" />
+    <Compile Include="../../source/Playnite/HoleInOne/PreparedSessionManager.cs" Link="PreparedSessionManager.cs" />
     <Compile Include="StoreChecks.cs" />
     <Compile Include="LauncherSettingsChecks.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/LauncherSettings.cs" Link="LauncherSettings.cs" />

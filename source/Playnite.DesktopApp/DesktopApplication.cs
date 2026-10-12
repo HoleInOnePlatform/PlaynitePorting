@@ -226,6 +226,9 @@ namespace Playnite.DesktopApp
                 CurrentNative.Shutdown(); return;
             }
 
+            HoleInOne.CloudPreparation.Begin();
+            CurrentNative.Exit += (sender, args) => HoleInOne.CloudPreparation.Shutdown();
+
             if (isFirstStart)
             {
                 await MainModel.UpdateLibrary(false, true, false);

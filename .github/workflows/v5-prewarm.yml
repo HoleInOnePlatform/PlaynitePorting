@@ -1,0 +1,25 @@
+name: V5 session prewarm
+on:
+  push:
+    branches: [codex/v5-session-prewarm]
+  pull_request:
+    paths:
+      - 'source/Playnite/HoleInOne/**'
+      - 'source/Playnite.DesktopApp/**'
+      - 'tests/HoleInOne.Checks/**'
+      - '.github/workflows/v5-prewarm.yml'
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet run --project tests/HoleInOne.Checks
+      - name: Build Windows desktop and browser
+        shell: pwsh
+        run: ./build/Build-HoleInOne.ps1 -Configuration Debug -OutputDirectory artifacts/HoleInOne-V5
