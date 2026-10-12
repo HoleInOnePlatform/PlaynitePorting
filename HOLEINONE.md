@@ -4,6 +4,15 @@
 
 플랫폼 시작 시 Steam을 준비하고 플레이 시 기존 전체화면 웹뷰로 연결합니다. Backend 동반 배포·V5 설정·검증 범위는 [V5_PREWARM.md](V5_PREWARM.md)를 참고하세요.
 
+## 배포 폴더 정리 (2026-10-11)
+
+- 최신 정리본: `artifacts/HoleInOne-20261011.zip` 및 같은 이름의 폴더. 2026-10-09 Steam Cloud 시험 빌드를 재패키징함. 실행 코드·의존성 버전은 동일함.
+- 최상위는 `Start-HoleInOne.cmd`, `READ-ME.txt`, `App`, `Docs`, `Diagnostics`의 5개 항목임. 전체 압축 해제 후 시작 파일 실행. 팀 테스트 사용자 데이터 경로는 유지함.
+- 실행 파일·DLL·브라우저 리소스·라이선스는 상대 경로를 유지한 채 `App`에 보관함. 사용 안내는 `Docs`, 서버 확인 및 안전 모드 실행은 `Diagnostics`에 있음.
+- 앞으로 `Prepare-DevelopmentPackage.ps1`도 이 구조의 ZIP과 `<ZIP 이름>-Package` 폴더를 생성함. 원본 빌드 폴더는 유지함.
+- 기존 빌드 재패키징: `./build/New-HoleInOnePackage.ps1 -ApplicationDirectory <빌드 폴더> -OutputDirectory <새 배포 폴더> -OutputZip <새 ZIP 경로>`. 기존 대상은 덮어쓰지 않음.
+- 검증: 993개 보존 파일의 SHA-256 일치, ZIP 필수 파일·구조 확인. 독립 실행 검사는 원본과 정리본 모두 시작 직후 종료되어 완료하지 못함. 실제 로그인·게임 실행은 재검증하지 않음.
+
 ## 홀인원 전용 아이콘 (2026-10-04)
 
 - 최신 공유 파일: `artifacts/HoleInOne-TeamTest-20261004-icon.zip`. 기존 홀인원을 모두 종료하고 새 폴더에 전체 압축 해제 후 `Start-HoleInOne.cmd` 실행. 팀 테스트 사용자 데이터 경로는 그대로 유지함.

@@ -10,6 +10,8 @@ if (Get-ChildItem -LiteralPath $applicationPath -Filter 'Playnite.*.exe') {
 }
 $configurationPath = (Resolve-Path -LiteralPath $ConfigurationFile).Path
 $archivePath = [IO.Path]::GetFullPath($OutputZip)
+$packageDirectory = Join-Path ([IO.Path]::GetDirectoryName($archivePath)) ([IO.Path]::GetFileNameWithoutExtension($archivePath) + '-Package')
+if (Test-Path -LiteralPath $packageDirectory) { throw '배포 폴더가 이미 존재함. 새 ZIP 파일명을 지정해야 함.' }
 if (Test-Path -LiteralPath $archivePath) { throw '기존 ZIP을 덮어쓰지 않음. 새 파일명을 지정해야 함.' }
 if ($archivePath.StartsWith($applicationPath.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw 'ZIP은 앱 폴더 밖에 생성해야 함.'
@@ -73,6 +75,5 @@ IP만 입력하면 http://IP:5010/으로 처리함. 저장한 주소는 다음 �
 HTTP 개발 연결은 암호화되지 않음. 실제 고객 서비스용 배포본이 아니며 기존 라이브러리 보안 경고가 남아 있음.
 이 빌드의 이전 버전 복귀는 기존 배포 폴더로 실행하면 됨. 실제 게임 세이브의 복구와는 별개임.
 "@ | Set-Content -LiteralPath (Join-Path $applicationPath 'READ-ME.txt') -Encoding UTF8
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[IO.Compression.ZipFile]::CreateFromDirectory($applicationPath, $archivePath, [IO.Compression.CompressionLevel]::Fastest, $false)
+& (Join-Path $PSScriptRoot 'New-HoleInOnePackage.ps1') -ApplicationDirectory $applicationPath -OutputDirectory $packageDirectory -OutputZip $archivePath
 Write-Host "팀 개발용 ZIP 생성 완료: $archivePath"

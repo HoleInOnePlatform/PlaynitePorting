@@ -9,6 +9,8 @@ namespace Playnite.HoleInOne
         public string BackendUrl { get; set; } = "http://127.0.0.1:5010/";
         public string BearerToken { get; set; }
         public bool RequireLogin { get; set; }
+        // Explicitly enabled after connecting a Steam account; no prompts are introduced during handoff.
+        public bool SteamCloudUploadEnabled { get; set; }
         [JsonIgnore]
         public bool CanChangeDevelopmentBackend { get; private set; }
         public string DownloadDirectory { get; set; } = Path.Combine(
