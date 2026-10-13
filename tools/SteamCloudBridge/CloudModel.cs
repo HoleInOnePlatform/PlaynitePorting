@@ -1,3 +1,4 @@
+using Playnite.HoleInOne;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -204,38 +205,40 @@ public interface ICloudTransport
     Task EnsureLaunchReadyAsync(CancellationToken ct);
 }
 
-public sealed class CloudSyncEngine(ICloudTransport transport)
+public sealed class CloudSyncEngine(ICloudTransport transport, PerformanceTrace? trace = null)
 {
+    private readonly PerformanceTrace timing = trace ?? new PerformanceTrace("steam_worker", null);
     public async Task<UploadPlan> SyncAsync(IReadOnlyList<SaveFile> files, CloudSnapshot baseline, IReadOnlyList<CloudRule> rules,
         uint appId, ulong steamId, bool preview, CancellationToken ct)
     {
-        var current = await transport.SnapshotAsync(ct);
-        var plan = CloudPlanner.Create(files, baseline, current, rules, appId, steamId);
+        var current = await timing.RunAsync("current_snapshot", () => transport.SnapshotAsync(ct));
+        var plan = timing.Run("plan_upload", () => CloudPlanner.Create(files, baseline, current, rules, appId, steamId));
         if (preview) return plan;
         if (plan.Files.Count > 0)
         {
-            var batch = await transport.BeginAsync(plan.Files, current.ChangeNumber, ct);
+            var batch = await timing.RunAsync("begin_upload_batch", () => transport.BeginAsync(plan.Files, current.ChangeNumber, ct));
             var success = false;
             try
             {
-                foreach (var file in plan.Files) await transport.UploadAsync(batch, file, ct);
+                await timing.RunAsync("upload_files", async () =>
+                { foreach (var file in plan.Files) await transport.UploadAsync(batch, file, ct); });
                 success = true;
             }
             finally
             {
                 // Cancellation must not leave an upload batch open. Never report a failed batch as successful.
                 using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                await transport.CompleteAsync(batch, success, cleanup.Token);
+                await timing.RunAsync("complete_upload_batch", () => transport.CompleteAsync(batch, success, cleanup.Token));
             }
         }
-        var verified = await transport.SnapshotAsync(ct);
+        var verified = await timing.RunAsync("verify_remote_snapshot", () => transport.SnapshotAsync(ct));
         foreach (var file in plan.Files)
             if (!verified.Files.TryGetValue(file.Name, out var remote) || remote.Sha1 != file.Sha1 || remote.Size != file.Bytes.Length)
                 throw new CloudFailure("upload_verification_failed");
         // Recheck unchanged files too: a different device may have edited them during this upload.
         var recheck = CloudPlanner.Create(files, baseline, verified, rules, appId, steamId);
         if (recheck.Files.Count != 0) throw new CloudFailure("upload_verification_failed");
-        await transport.EnsureLaunchReadyAsync(ct);
+        await timing.RunAsync("steam_launch_ready", () => transport.EnsureLaunchReadyAsync(ct));
         return plan;
     }
 }

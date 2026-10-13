@@ -31,7 +31,7 @@ namespace Playnite.DesktopApp.HoleInOne
             {
                 var backend = new BackendConnection(settings.BackendUrl, token);
                 current = new Context { Address = settings.BackendUrl, Token = token, Backend = backend,
-                    Sessions = new PreparedSessionManager(backend) };
+                    Sessions = new PreparedSessionManager(backend, log: line => LogManager.GetLogger().Info(line)) };
             }
             return current.Sessions;
         }

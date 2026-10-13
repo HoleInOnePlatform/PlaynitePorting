@@ -8,6 +8,7 @@
     <AssemblyName>HoleInOne.SteamCloud</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../source/Playnite/HoleInOne/PerformanceTrace.cs" Link="PerformanceTrace.cs" />
     <PackageReference Include="SteamKit2" Version="3.4.0" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />

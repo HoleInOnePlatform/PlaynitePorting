@@ -57,3 +57,36 @@ session이 ready인 상태에서 `{"operation":"preview","archivePath":"절대 Z
 실제 Steam 로그인과 Cloud 쓰기를 사용하지 않는 모의 검사까지 자동 실행하며, 사용자 계정 인증 이후의 실환경 결과는 별도로 기록해야 함.
 
 참고: https://github.com/SteamRE/SteamKit (LGPL-2.1), https://github.com/codebude/QRCoder (MIT). 패키지는 수정하지 않은 별도 DLL로 배포함.
+
+## 입장·전환 시간 진단
+
+클라이언트의 기존 `playnite.log`에서 `HIO-PERF`를 검색한다.
+팀 테스트 실행 파일 기준 위치는 `%LOCALAPPDATA%\HoleInOne-TeamTest\playnite.log`이다.
+다른 실행 옵션을 쓰면 해당 사용자 데이터 폴더에 기록된다. 파일은 기존 로그 회전 정책을 따른다.
+
+| 구간 | 주요 stage |
+|---|---|
+| 플레이 클릭부터 클라우드 실행 응답 | entry_until_game_running |
+| Steam 준비 | steam_worker_start, steam_login, cloud_rules, baseline_snapshot, steam_baseline |
+| 세션 준비·선점 | preparation_lock_wait, prepare_api, connect_only_api / play_api / legacy_create_api |
+| 화면 연결·실행 허가 | webview_create_and_open, remaining_baseline_wait, allow_game_launch |
+| 로컬 전환 전체 | handoff_until_local_launch_requested |
+| 서버 내보내기 대기 | request_export, server_export_wait |
+| 다운로드·검증 | download_and_verify_archive |
+| 병렬 준비 | validate_and_stage_saves, steam_cloud_sync |
+| Steam 업로드 내부 | read_save_bundle, current_snapshot, plan_upload, begin_upload_batch, upload_files, complete_upload_batch, verify_remote_snapshot, steam_launch_ready |
+| 적용·로컬 실행 요청 | backup_and_commit_saves, persist_receipt, close_view_and_cleanup, request_local_launch |
+
+각 단계는 begin/end, elapsed_ms(단계 시간), total_ms(trace 경과 시간), outcome을 남긴다.
+새 전환 시도마다 trace가 바뀐다. link의 session/export/preparation과 worker parent로 연결한다.
+사용자가 전환 버튼을 누르기까지 플레이한 시간은 전환 전체 시간에 포함되지 않는다.
+설치 대기는 local_installation_wait로 별도 기록한다. 병렬/중첩 단계 시간은 더하지 않는다.
+로컬 실행 시간은 실행 요청까지이며 실제 게임 메뉴가 표시될 때까지의 시간은 아니다.
+클라우드 전체 시간은 새 연결 페이지의 game_running 응답을 받아 종료되므로 구형 페이지에서는
+종료 로그가 interrupted로 남을 수 있다.
+
+Worker는 시간 로그만 stderr에 내보내고 클라이언트가 고정 형식을 검증해 수집한다.
+stdout의 기존 명령/응답 계약과 세이브 전송 순서는 그대로 유지한다.
+연결 페이지의 숫자 시간 로그도 같은 playnite.log에 모인다.
+서버의 AWS 내보내기/S3 상세 시간은 Backend 서비스 로그의 session/export 식별자로 찾는다.
+전체 진단에는 새 클라이언트·Steam worker와 Backend·StreamingPage 업데이트가 필요하다.

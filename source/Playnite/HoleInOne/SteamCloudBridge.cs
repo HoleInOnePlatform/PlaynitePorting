@@ -27,7 +27,7 @@ namespace Playnite.HoleInOne
             if (account == 0) throw new InvalidOperationException("Steam에 로그인한 뒤 다시 시도해 주세요.");
             return (76561197960265728UL + account).ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
-        public SteamCloudBridge()
+        public SteamCloudBridge(string parentTrace = null)
         {
             if (!File.Exists(ExecutablePath)) throw new InvalidOperationException("Steam 세이브 연동 모듈이 없습니다. 새 배포본을 사용해 주세요.");
             process = new Process { StartInfo = new ProcessStartInfo
@@ -37,8 +37,17 @@ namespace Playnite.HoleInOne
                 RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
             } };
             process.Start();
-            // Drain diagnostic output without logging it: authentication material must never enter application logs.
-            process.ErrorDataReceived += (sender, args) => { };
+            // Forward only the fixed timing grammar, never arbitrary worker/Steam diagnostics.
+            process.ErrorDataReceived += (sender, args) =>
+            {
+                if (args.Data != null && args.Data.Length < 512 &&
+                    System.Text.RegularExpressions.Regex.IsMatch(args.Data,
+                        @"^\[HIO-PERF\] flow=steam_worker trace=[a-f0-9]{32} span=[0-9]+ stage=[a-z_]+ event=(begin|end) elapsed_ms=[0-9]+ total_ms=[0-9]+ outcome=(pending|ok|failed|cancelled|interrupted)$"))
+                {
+                    try { Playnite.SDK.LogManager.GetLogger().Info(args.Data + " parent=" + parentTrace); }
+                    catch (Exception) { }
+                }
+            };
             process.BeginErrorReadLine();
         }
         public async Task AuthenticateAsync(Action<byte[]> qr, CancellationToken ct)

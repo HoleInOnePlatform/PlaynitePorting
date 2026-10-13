@@ -1,3 +1,4 @@
+using Playnite.HoleInOne;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -6,6 +7,7 @@ using HoleInOne.SteamCloud;
 // Private newline-delimited JSON pipe. No listener, token/URL logging, or command-line credentials.
 var outputGate = new object();
 void Emit(object value) { lock (outputGate) Console.WriteLine(JsonSerializer.Serialize(value)); }
+var timing = new PerformanceTrace("steam_worker", Console.Error.WriteLine);
 using var lifetime = new CancellationTokenSource();
 var queue = Channel.CreateUnbounded<BridgeCommand>(new() { SingleReader = true, SingleWriter = true });
 var reader = Task.Run(async () =>
@@ -38,7 +40,7 @@ try
     using (var loginTimeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token))
     {
         loginTimeout.CancelAfter(TimeSpan.FromSeconds(start.Operation == "auth" ? 180 : 45));
-        await connection.LoginAsync(start.TokenPath, steamId, start.Operation == "auth", Emit, loginTimeout.Token);
+        await timing.RunAsync("steam_login", () => connection.LoginAsync(start.TokenPath, steamId, start.Operation == "auth", Emit, loginTimeout.Token));
     }
     if (start.Operation == "auth") Emit(new { type = "authenticated", steamId = steamId.ToString() });
     else
@@ -50,7 +52,9 @@ try
         using (var prepare = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token))
         {
             prepare.CancelAfter(TimeSpan.FromSeconds(45));
-            (rules, baseline) = await CloudPreparation.LoadAsync(transport.RulesAsync, transport.SnapshotAsync, prepare.Token);
+            (rules, baseline) = await HoleInOne.SteamCloud.CloudPreparation.LoadAsync(
+                ct => timing.RunAsync("cloud_rules", () => transport.RulesAsync(ct)),
+                ct => timing.RunAsync("baseline_snapshot", () => transport.SnapshotAsync(ct)), prepare.Token);
         }
         Emit(new { type = "ready", steamId = steamId.ToString(), appId = start.AppId, baselineFiles = baseline.Files.Count });
         await foreach (var command in queue.Reader.ReadAllAsync(lifetime.Token))
@@ -63,8 +67,8 @@ try
                 using var operation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
                 operation.CancelAfter(TimeSpan.FromSeconds(120));
                 var watch = Stopwatch.StartNew();
-                var files = await SaveBundle.ReadAsync(command.ArchivePath, command.Sha256, start.AppId, operation.Token);
-                var plan = await new CloudSyncEngine(transport).SyncAsync(files, baseline, rules, start.AppId, steamId, command.Operation == "preview", operation.Token);
+                var files = await timing.RunAsync("read_save_bundle", () => SaveBundle.ReadAsync(command.ArchivePath, command.Sha256, start.AppId, operation.Token));
+                var plan = await new CloudSyncEngine(transport, timing).SyncAsync(files, baseline, rules, start.AppId, steamId, command.Operation == "preview", operation.Token);
                 Emit(new { type = "complete", preview = command.Operation == "preview", uploaded = plan.Files.Count, unchanged = plan.Unchanged,
                     localOnly = plan.LocalOnly, bytes = plan.Files.Sum(f => (long)f.Bytes.Length), elapsedMs = watch.ElapsedMilliseconds });
             }

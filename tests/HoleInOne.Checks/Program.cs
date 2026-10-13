@@ -17,6 +17,7 @@ async Task Reject(Func<Task> action, string name)
     throw new Exception("Expected rejection: " + name);
 }
 var token = CancellationToken.None;
+await PerformanceChecks.RunAsync(Check);
 await ReceiptChecks.RunAsync(Check);
 await ParallelChecks.RunAsync(Check);
 using var wire = new FakeBackend();

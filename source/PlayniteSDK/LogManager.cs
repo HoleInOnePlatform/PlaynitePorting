@@ -104,7 +104,7 @@ namespace Playnite.SDK
             if (logManager != null)
             {
                 var asmName = Assembly.GetCallingAssembly().GetName().Name;
-                var isCore = asmName == "Playnite.DesktopApp" || asmName == "Playnite.FullscreenApp" || asmName == "Playnite";
+                var isCore = asmName == "HoleInOne" || asmName == "Playnite.DesktopApp" || asmName == "Playnite.FullscreenApp" || asmName == "Playnite";
                 var className = (new StackFrame(1)).GetMethod().DeclaringType.Name;
                 if (isCore)
                 {
@@ -137,7 +137,7 @@ namespace Playnite.SDK
             if (logManager != null)
             {
                 var asmName = Assembly.GetCallingAssembly().GetName().Name;
-                var isCore = asmName == "Playnite.DesktopApp" || asmName == "Playnite.FullscreenApp" || asmName == "Playnite";
+                var isCore = asmName == "HoleInOne" || asmName == "Playnite.DesktopApp" || asmName == "Playnite.FullscreenApp" || asmName == "Playnite";
                 if (isCore || loggerName.Contains("#"))
                 {
                     return logManager.GetLogger(loggerName);

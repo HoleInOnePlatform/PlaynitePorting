@@ -32,30 +32,32 @@ namespace Playnite.HoleInOne
         private readonly IPreparedSessionBackend backend;
         private readonly SemaphoreSlim gate = new SemaphoreSlim(1);
         private readonly Func<DateTimeOffset> now;
+        private readonly PerformanceTrace timing;
+        public string TimingId => timing.Id;
         private string requestId = Guid.NewGuid().ToString("N");
         private PreparedCloudSession prepared;
         private bool unsupported;
         private bool closed;
         private bool claimed;
-        public PreparedSessionManager(IPreparedSessionBackend backend, Func<DateTimeOffset> now = null)
-        { this.backend = backend; this.now = now ?? (() => DateTimeOffset.UtcNow); }
+        public PreparedSessionManager(IPreparedSessionBackend backend, Func<DateTimeOffset> now = null, Action<string> log = null)
+        { timing = new PerformanceTrace("session_preparation", log); this.backend = backend; this.now = now ?? (() => DateTimeOffset.UtcNow); }
 
         private async Task PrepareCoreAsync(CancellationToken ct)
         {
             if (closed) throw new OperationCanceledException();
             if (prepared != null || unsupported) return;
-            try { prepared = await backend.PrepareSessionAsync(requestId, ct).ConfigureAwait(false); }
+            try { prepared = await timing.RunAsync("prepare_api", () => backend.PrepareSessionAsync(requestId, ct)).ConfigureAwait(false); }
             catch (PrewarmingUnavailableException) { unsupported = true; }
         }
         public async Task PrepareAsync(CancellationToken ct)
         {
-            await gate.WaitAsync(ct).ConfigureAwait(false);
+            await timing.RunAsync("preparation_lock_wait", () => gate.WaitAsync(ct)).ConfigureAwait(false);
             try { await PrepareCoreAsync(ct).ConfigureAwait(false); }
             finally { gate.Release(); }
         }
         public async Task<CloudSession> PlayAsync(string gameId, CancellationToken ct, Task beforeLaunch = null)
         {
-            await gate.WaitAsync(ct).ConfigureAwait(false);
+            await timing.RunAsync("preparation_lock_wait", () => gate.WaitAsync(ct)).ConfigureAwait(false);
             try
             {
                 if (closed) throw new OperationCanceledException();
@@ -68,18 +70,18 @@ namespace Playnite.HoleInOne
                         await PrepareCoreAsync(ct).ConfigureAwait(false);
                         if (unsupported)
                         {
-                            if (beforeLaunch != null) await beforeLaunch.ConfigureAwait(false);
+                            if (beforeLaunch != null) await timing.RunAsync("baseline_gate_wait", () => beforeLaunch).ConfigureAwait(false);
                             ct.ThrowIfCancellationRequested();
-                            var legacy = await backend.CreateSessionAsync(ct, gameId).ConfigureAwait(false);
+                            var legacy = await timing.RunAsync("legacy_create_api", () => backend.CreateSessionAsync(ct, gameId)).ConfigureAwait(false);
                             claimed = true;
                             return legacy;
                         }
                         if (prepared.GameId != gameId)
                         {
                             await ReleaseCoreAsync(ct).ConfigureAwait(false);
-                            if (beforeLaunch != null) await beforeLaunch.ConfigureAwait(false);
+                            if (beforeLaunch != null) await timing.RunAsync("baseline_gate_wait", () => beforeLaunch).ConfigureAwait(false);
                             ct.ThrowIfCancellationRequested();
-                            var legacy = await backend.CreateSessionAsync(ct, gameId).ConfigureAwait(false);
+                            var legacy = await timing.RunAsync("legacy_create_api", () => backend.CreateSessionAsync(ct, gameId)).ConfigureAwait(false);
                             claimed = true;
                             return legacy;
                         }
@@ -88,16 +90,16 @@ namespace Playnite.HoleInOne
                         {
                             try
                             {
-                                var connected = await deferred.ConnectPreparedSessionAsync(prepared.SessionId, gameId, ct).ConfigureAwait(false);
+                                var connected = await timing.RunAsync("connect_only_api", () => deferred.ConnectPreparedSessionAsync(prepared.SessionId, gameId, ct)).ConfigureAwait(false);
                                 if (!connected.LaunchDeferred) throw new InvalidOperationException("게임 시작 대기를 확인하지 못했습니다.");
                                 claimed = true;
                                 return connected;
                             }
                             catch (DeferredLaunchUnavailableException) { } // Old backend: wait before opening any play URL.
                         }
-                        if (beforeLaunch != null) await beforeLaunch.ConfigureAwait(false);
+                        if (beforeLaunch != null) await timing.RunAsync("baseline_gate_wait", () => beforeLaunch).ConfigureAwait(false);
                         ct.ThrowIfCancellationRequested();
-                        var session = await backend.PlayPreparedSessionAsync(prepared.SessionId, gameId, ct).ConfigureAwait(false);
+                        var session = await timing.RunAsync("play_api", () => backend.PlayPreparedSessionAsync(prepared.SessionId, gameId, ct)).ConfigureAwait(false);
                         claimed = true;
                         return session;
                     }
@@ -126,7 +128,7 @@ namespace Playnite.HoleInOne
         }
         public async Task StopAsync(CancellationToken ct)
         {
-            await gate.WaitAsync(ct).ConfigureAwait(false);
+            await timing.RunAsync("preparation_lock_wait", () => gate.WaitAsync(ct)).ConfigureAwait(false);
             try
             {
                 closed = true;
