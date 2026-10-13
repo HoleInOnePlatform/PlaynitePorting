@@ -50,8 +50,7 @@ try
         using (var prepare = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token))
         {
             prepare.CancelAfter(TimeSpan.FromSeconds(45));
-            rules = await transport.RulesAsync(prepare.Token);
-            baseline = await transport.SnapshotAsync(prepare.Token);
+            (rules, baseline) = await CloudPreparation.LoadAsync(transport.RulesAsync, transport.SnapshotAsync, prepare.Token);
         }
         Emit(new { type = "ready", steamId = steamId.ToString(), appId = start.AppId, baselineFiles = baseline.Files.Count });
         await foreach (var command in queue.Reader.ReadAllAsync(lifetime.Token))
@@ -67,7 +66,7 @@ try
                 var files = await SaveBundle.ReadAsync(command.ArchivePath, command.Sha256, start.AppId, operation.Token);
                 var plan = await new CloudSyncEngine(transport).SyncAsync(files, baseline, rules, start.AppId, steamId, command.Operation == "preview", operation.Token);
                 Emit(new { type = "complete", preview = command.Operation == "preview", uploaded = plan.Files.Count, unchanged = plan.Unchanged,
-                    localOnly = plan.LocalOnly, bytes = plan.Files.Sum(f => f.Bytes.LongLength), elapsedMs = watch.ElapsedMilliseconds });
+                    localOnly = plan.LocalOnly, bytes = plan.Files.Sum(f => (long)f.Bytes.Length), elapsedMs = watch.ElapsedMilliseconds });
             }
             catch (Exception error) { Emit(new { type = "error", code = ErrorCode(error) }); }
         }

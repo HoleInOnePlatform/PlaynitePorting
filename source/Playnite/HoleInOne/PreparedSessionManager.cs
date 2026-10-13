@@ -12,6 +12,11 @@ namespace Playnite.HoleInOne
     }
     public sealed class PrewarmingUnavailableException : Exception { }
     public sealed class PreparedSessionExpiredException : Exception { }
+    public sealed class DeferredLaunchUnavailableException : Exception { }
+    public interface IDeferredPreparedSessionBackend
+    {
+        Task<CloudSession> ConnectPreparedSessionAsync(string sessionId, string gameId, CancellationToken ct);
+    }
     public interface IPreparedSessionBackend
     {
         Task<PreparedCloudSession> PrepareSessionAsync(string requestId, CancellationToken ct);
@@ -48,7 +53,7 @@ namespace Playnite.HoleInOne
             try { await PrepareCoreAsync(ct).ConfigureAwait(false); }
             finally { gate.Release(); }
         }
-        public async Task<CloudSession> PlayAsync(string gameId, CancellationToken ct)
+        public async Task<CloudSession> PlayAsync(string gameId, CancellationToken ct, Task beforeLaunch = null)
         {
             await gate.WaitAsync(ct).ConfigureAwait(false);
             try
@@ -63,6 +68,8 @@ namespace Playnite.HoleInOne
                         await PrepareCoreAsync(ct).ConfigureAwait(false);
                         if (unsupported)
                         {
+                            if (beforeLaunch != null) await beforeLaunch.ConfigureAwait(false);
+                            ct.ThrowIfCancellationRequested();
                             var legacy = await backend.CreateSessionAsync(ct, gameId).ConfigureAwait(false);
                             claimed = true;
                             return legacy;
@@ -70,11 +77,26 @@ namespace Playnite.HoleInOne
                         if (prepared.GameId != gameId)
                         {
                             await ReleaseCoreAsync(ct).ConfigureAwait(false);
+                            if (beforeLaunch != null) await beforeLaunch.ConfigureAwait(false);
+                            ct.ThrowIfCancellationRequested();
                             var legacy = await backend.CreateSessionAsync(ct, gameId).ConfigureAwait(false);
                             claimed = true;
                             return legacy;
                         }
                         if (prepared.ExpiresAt <= now()) throw new PreparedSessionExpiredException();
+                        if (beforeLaunch != null && !beforeLaunch.IsCompleted && backend is IDeferredPreparedSessionBackend deferred)
+                        {
+                            try
+                            {
+                                var connected = await deferred.ConnectPreparedSessionAsync(prepared.SessionId, gameId, ct).ConfigureAwait(false);
+                                if (!connected.LaunchDeferred) throw new InvalidOperationException("게임 시작 대기를 확인하지 못했습니다.");
+                                claimed = true;
+                                return connected;
+                            }
+                            catch (DeferredLaunchUnavailableException) { } // Old backend: wait before opening any play URL.
+                        }
+                        if (beforeLaunch != null) await beforeLaunch.ConfigureAwait(false);
+                        ct.ThrowIfCancellationRequested();
                         var session = await backend.PlayPreparedSessionAsync(prepared.SessionId, gameId, ct).ConfigureAwait(false);
                         claimed = true;
                         return session;

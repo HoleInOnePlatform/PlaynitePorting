@@ -40,6 +40,8 @@ namespace Playnite.DesktopApp.HoleInOne
             DownloadHandoffPrompt prompt = null;
             Game localGame = null;
             SteamCloudBridge steamCloud = null;
+            Task steamPreparation = null;
+            bool cloudLaunchAllowed = false;
             try
             {
                 var key = BuiltinStoreLibrary.GameKey(game);
@@ -49,11 +51,11 @@ namespace Playnite.DesktopApp.HoleInOne
                 {
                     // Capture the remote baseline before cloud gameplay, not after the export arrives.
                     steamCloud = new SteamCloudBridge();
-                    await steamCloud.PrepareAsync(steamAppId, play.Closed.Token);
+                    steamPreparation = steamCloud.PrepareAsync(steamAppId, play.Closed.Token);
                 }
                 backend = new BackendConnection(settings.BackendUrl, LauncherLogin.TokenFor(settings));
                 preparation = CloudPreparation.Get(settings);
-                try { session = await preparation.PlayAsync(key, play.Closed.Token); }
+                try { session = await preparation.PlayAsync(key, play.Closed.Token, steamPreparation); }
                 catch (LoginRequiredException) when (settings.RequireLogin)
                 {
                     // A backend restart invalidates in-memory tokens. Reauthenticate before retrying creation.
@@ -63,13 +65,23 @@ namespace Playnite.DesktopApp.HoleInOne
                     backend.Dispose();
                     backend = new BackendConnection(settings.BackendUrl, LauncherLogin.TokenFor(settings));
                     preparation = CloudPreparation.Get(settings);
-                    session = await preparation.PlayAsync(key, play.Closed.Token);
+                    session = await preparation.PlayAsync(key, play.Closed.Token, steamPreparation);
                 }
+                var receipts = new ExportReceipts(settings);
+                receipts.Start();
                 play.View = new Playnite.WebView.WebView(new WebViewSettings { WindowWidth = 1280, WindowHeight = 800 });
                 play.View.EnableGameMode();
                 play.View.WindowHost.Closed += closed;
                 play.View.Navigate(session.StreamUrl);
                 play.View.Open();
+                if (steamPreparation != null) await steamPreparation;
+                play.Closed.Token.ThrowIfCancellationRequested();
+                if (session.LaunchDeferred)
+                {
+                    steamCloud.VerifyAccount();
+                    await backend.AllowPreparedLaunchAsync(session.SessionId, play.Closed.Token);
+                }
+                cloudLaunchAllowed = true;
                 if (!game.IsInstalling && !game.IsInstalled) editor.InstallGame(game);
                 while (true)
                 {
@@ -140,12 +152,11 @@ namespace Playnite.DesktopApp.HoleInOne
                             if (game.IsRunning || !game.IsInstalled || game.IsInstalling ||
                                 !string.Equals(game.InstallDirectory, roots["install"], StringComparison.OrdinalIgnoreCase))
                                 throw new InvalidOperationException("로컬 게임 상태 또는 설치 위치가 변경됨. 전환 중단.");
-                            // Keep the archive/backups when Steam upload fails; never launch through a known conflict.
-                            if (steamCloud != null)
-                            {
-                                prompt.SetBusy(true, "저장된 진행 상황을 준비하는 중입니다.");
-                                await steamCloud.SyncAsync(archive, status.Sha256, play.Closed.Token);
-                            }
+                            prompt.SetBusy(true, "세이브를 검증하고 저장된 진행 상황을 준비하는 중입니다.");
+                            var restore = await ParallelPreparation.RunAsync(
+                                ct => ExportSaveInstaller.Prepare(archive, key, roots, steamId, accountId, Path.Combine(work, "restore"), ct),
+                                ct => steamCloud == null ? Task.CompletedTask : steamCloud.SyncAsync(archive, status.Sha256, ct),
+                                play.Closed.Token);
                             prompt.ThrowIfExpired();
                             game = editor.Database.Games.Get(game.Id) ?? throw new InvalidOperationException("라이브러리에서 게임이 제거됨.");
                             if (game.IsRunning || game.IsLaunching || !game.IsInstalled || game.IsInstalling ||
@@ -154,11 +165,9 @@ namespace Playnite.DesktopApp.HoleInOne
                             if (steamId != null && SteamCloudBridge.ActiveSteamId() != steamId)
                                 throw new InvalidOperationException("Steam 계정이 변경되어 전환을 중단함.");
                             prompt.SetBusy(true, "기존 세이브를 백업하고 클라우드 세이브를 적용하는 중입니다.");
-                            await Task.Run(() => ExportSaveInstaller.Apply(archive, key, roots, steamId, accountId, Path.Combine(work, "restore"), play.Closed.Token), play.Closed.Token);
-                            // The receipt is cleanup only: failure must not invalidate successfully applied saves.
-                            try { await backend.ReceiveExportAsync(session.SessionId, requestId, status.Sha256, play.Closed.Token); }
-                            catch (Exception error) when (!play.Closed.IsCancellationRequested)
-                            { LogManager.GetLogger().Warn(error, "Applied save export receipt failed."); }
+                            await Task.Run(() => restore.Commit(play.Closed.Token), play.Closed.Token);
+                            // Persist cleanup, then send independently of local launch and webview cancellation.
+                            receipts.Enqueue(session.SessionId, requestId, status.Sha256);
                         }
                         play.Closed.Token.ThrowIfCancellationRequested();
                         prompt.ThrowIfExpired();
@@ -182,13 +191,18 @@ namespace Playnite.DesktopApp.HoleInOne
                 if (error is LoginRequiredException) LauncherLogin.Forget();
                 MessageBox.Show(error.Message, "HoleInOne", MessageBoxButton.OK,
                     error is CloudPlayUnavailableException ? MessageBoxImage.Warning : MessageBoxImage.Error);
-                if (play.View != null && !play.Closed.IsCancellationRequested)
+                if (play.View != null && cloudLaunchAllowed && !play.Closed.IsCancellationRequested)
                 {
                     try { await Task.Delay(Timeout.Infinite, play.Closed.Token); } catch (OperationCanceledException) { }
                 }
             }
             finally
             {
+                play.Closed.Cancel();
+                if (steamPreparation != null)
+                {
+                    try { await steamPreparation; } catch (Exception) { } // Observe work before disposing the bridge.
+                }
                 prompt?.Dispose();
                 if (play.View != null) { play.View.WindowHost.Closed -= closed; play.View.Dispose(); }
                 active.Remove(game.Id);

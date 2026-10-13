@@ -11,16 +11,51 @@ public sealed class CloudFailure(string code) : Exception(code)
 }
 public sealed record RemoteFile(string Name, string Sha1, long Size, uint Platforms = uint.MaxValue);
 public sealed record CloudSnapshot(ulong ChangeNumber, IReadOnlyDictionary<string, RemoteFile> Files);
-public sealed record SaveFile(string Root, string Path, byte[] Bytes)
+// Own a snapshot so callers cannot change the content after its hash is cached.
+internal sealed class SaveContent(byte[] bytes)
 {
-    public string Sha1 => Convert.ToHexStringLower(SHA1.HashData(Bytes));
+    private readonly byte[] bytes = (byte[])bytes.Clone();
+    private string? sha1;
+    public ReadOnlyMemory<byte> Bytes => bytes;
+    public string Sha1 => sha1 ??= Convert.ToHexStringLower(SHA1.HashData(bytes));
 }
-public sealed record UploadFile(string Name, byte[] Bytes, uint Platforms)
+public sealed record SaveFile
 {
-    public string Sha1 => Convert.ToHexStringLower(SHA1.HashData(Bytes));
+    public string Root { get; init; }
+    public string Path { get; init; }
+    internal SaveContent Content { get; }
+    public ReadOnlyMemory<byte> Bytes => Content.Bytes;
+    public string Sha1 => Content.Sha1;
+    public SaveFile(string root, string path, byte[] bytes)
+    { Root = root; Path = path; Content = new SaveContent(bytes); }
+}
+public sealed record UploadFile
+{
+    public string Name { get; }
+    public uint Platforms { get; }
+    private readonly SaveContent content;
+    public ReadOnlyMemory<byte> Bytes => content.Bytes;
+    public string Sha1 => content.Sha1;
+    public UploadFile(string name, byte[] bytes, uint platforms) : this(name, new SaveContent(bytes), platforms) { }
+    internal UploadFile(string name, SaveContent content, uint platforms)
+    { Name = name; this.content = content; Platforms = platforms; }
 }
 public sealed record CloudRule(string Root, string Path, string Pattern, bool Recursive, uint Platforms = 1);
 public sealed record UploadPlan(IReadOnlyList<UploadFile> Files, int Unchanged, int LocalOnly);
+
+public static class CloudPreparation
+{
+    public static async Task<(IReadOnlyList<CloudRule> Rules, CloudSnapshot Baseline)> LoadAsync(
+        Func<CancellationToken, Task<IReadOnlyList<CloudRule>>> readRules,
+        Func<CancellationToken, Task<CloudSnapshot>> readSnapshot, CancellationToken ct)
+    {
+        var rules = readRules(ct);
+        var baseline = readSnapshot(ct);
+        // Observe both requests before disposing their shared connection, including on failure.
+        await Task.WhenAll(rules, baseline);
+        return (await rules, await baseline);
+    }
+}
 
 public static class SaveBundle
 {
@@ -124,7 +159,7 @@ public static class CloudPlanner
             if (name.Equals("remotecache.vdf", StringComparison.OrdinalIgnoreCase) || name.Equals("steam_autocloud.vdf", StringComparison.OrdinalIgnoreCase))
                 throw new CloudFailure("steam_metadata_in_bundle");
             current.Files.TryGetValue(name, out var remote);
-            return new(name, file.Bytes, remote?.Platforms ?? uint.MaxValue);
+            return new(name, file.Content, remote?.Platforms ?? uint.MaxValue);
         }
         if (root == "profile")
         {
@@ -137,11 +172,11 @@ public static class CloudPlanner
         var candidate = "%" + steamRoot + "%" + path;
         var existing = current.Files.Values.Where(f => Canonical(f.Name).Equals(Canonical(candidate), StringComparison.OrdinalIgnoreCase)).ToList();
         if (existing.Count > 1) throw new CloudFailure("ambiguous_cloud_path");
-        if (existing.Count == 1) return new(existing[0].Name, file.Bytes, existing[0].Platforms);
+        if (existing.Count == 1) return new(existing[0].Name, file.Content, existing[0].Platforms);
         var matching = rules.Where(r => r.Root == steamRoot && Matches(r, path, steamId, account)).ToList();
         if (matching.Count == 0) return null; // Export also contains local-only preferences, which must not be uploaded.
         if (matching.Select(r => r.Platforms).Distinct().Count() != 1) throw new CloudFailure("ambiguous_cloud_path");
-        return new(candidate, file.Bytes, matching[0].Platforms);
+        return new(candidate, file.Content, matching[0].Platforms);
     }
     private static string Canonical(string name) => Regex.Replace(name, "^(%[^%]+%)/", "$1");
     private static bool Matches(CloudRule rule, string path, ulong steamId, string account)

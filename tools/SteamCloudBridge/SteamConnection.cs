@@ -182,7 +182,7 @@ public sealed class SteamCloudTransport : ICloudTransport, IDisposable
         if (latest.ChangeNumber != expectedChange) throw new CloudFailure("remote_changed");
         var quota = await Receive(cloud.ClientGetAppQuotaUsage(new() { appid = appId }), ct);
         var newCount = latest.Files.Count + files.Count(f => !latest.Files.ContainsKey(f.Name));
-        var newSize = latest.Files.Values.Sum(f => f.Size) + files.Sum(f => f.Bytes.LongLength - (latest.Files.TryGetValue(f.Name, out var old) ? old.Size : 0));
+        var newSize = latest.Files.Values.Sum(f => f.Size) + files.Sum(f => (long)f.Bytes.Length - (latest.Files.TryGetValue(f.Name, out var old) ? old.Size : 0));
         if ((ulong)newCount > quota.max_num_files || (ulong)newSize > quota.max_num_bytes) throw new CloudFailure("cloud_quota_exceeded");
         var request = new CCloud_BeginAppUploadBatch_Request { appid = appId, client_id = clientId, machine_name = "HoleInOne Save Sync", app_build_id = buildId };
         request.files_to_upload.AddRange(files.Select(f => f.Name));
@@ -208,7 +208,7 @@ public sealed class SteamCloudTransport : ICloudTransport, IDisposable
                 if (!block.use_https || !Uri.TryCreate("https://" + block.url_host + block.url_path, UriKind.Absolute, out var uri) ||
                     !IsStorageHost(uri) || block.http_method is not (3 or 4) || block.block_offset > (ulong)file.Bytes.Length ||
                     block.block_length > (ulong)file.Bytes.Length - block.block_offset) throw new CloudFailure("unsupported_upload_protocol");
-                var body = block.explicit_body_data.Length > 0 ? block.explicit_body_data : file.Bytes.AsSpan((int)block.block_offset, (int)block.block_length).ToArray();
+                var body = block.explicit_body_data.Length > 0 ? block.explicit_body_data : file.Bytes.Span.Slice((int)block.block_offset, (int)block.block_length).ToArray();
                 using var request = new HttpRequestMessage(block.http_method == 4 ? HttpMethod.Put : HttpMethod.Post, uri) { Content = new ByteArrayContent(body) };
                 foreach (var header in block.request_headers)
                 {

@@ -52,11 +52,39 @@ static class PrewarmChecks
         cloud.Pending.SetResult(true); await startup; await stop;
         check(cloud.Stops == 1, "shutdown during preparation cleans up its eventual result");
 
+        var baseline = new TaskCompletionSource<bool>();
+        cloud = new FakeWarmBackend(); sessions = new PreparedSessionManager(cloud);
+        result = await sessions.PlayAsync("steam-2868840", default, baseline.Task);
+        check(result.LaunchDeferred && !baseline.Task.IsCompleted && cloud.Plays == 0, "supported backend connects while baseline is still pending without issuing play");
+        baseline.SetResult(true);
+        cloud = new FakeWarmBackend(); sessions = new PreparedSessionManager(cloud);
+        result = await sessions.PlayAsync("steam-2868840", default, Task.CompletedTask);
+        check(!result.LaunchDeferred && cloud.Plays == 1, "already completed baseline avoids the extra launch approval round trip");
+        foreach (var legacyBackend in new[] { new FakeWarmBackend { DeferredUnsupported = true }, new FakeWarmBackend { Disabled = true } })
+        {
+            baseline = new TaskCompletionSource<bool>();
+            sessions = new PreparedSessionManager(legacyBackend);
+            play = sessions.PlayAsync("steam-2868840", default, baseline.Task);
+            check(!play.IsCompleted && legacyBackend.Plays == 0 && legacyBackend.Legacy == 0, "older server waits for baseline before creating a playable session");
+            baseline.SetResult(true);
+            await play;
+            check(legacyBackend.Plays + legacyBackend.Legacy == 1, "fallback starts exactly once after baseline success");
+        }
+        cloud = new FakeWarmBackend { DeferredUnsupported = true }; sessions = new PreparedSessionManager(cloud);
+        await Reject(() => sessions.PlayAsync("steam-2868840", default, Task.FromException(new IOException("baseline failed"))));
+        check(cloud.Plays == 0 && cloud.Legacy == 0, "failed baseline never opens an ungated legacy session");
+
         var wire = new WarmWire();
         using var backend = new BackendConnection("http://localhost:5010/", "test-auth", wire);
         var prepared = await backend.PrepareSessionAsync("startup-id", default);
         await backend.PlayPreparedSessionAsync(prepared.SessionId, prepared.GameId, default);
         check(wire.Calls.SequenceEqual(new[] { "/v1/holeinone/sessions/prepare", "/v1/holeinone/sessions/warm-1/play" }), "HTTP preparation and claim routes match the backend contract");
+        await Reject(() => backend.ConnectPreparedSessionAsync(prepared.SessionId, prepared.GameId, default));
+        check(true, "missing deferred support confirmation is rejected before navigating");
+        wire.Deferred = true;
+        check((await backend.ConnectPreparedSessionAsync(prepared.SessionId, prepared.GameId, default)).LaunchDeferred, "connect-only route requires explicit launch gate confirmation");
+        await backend.AllowPreparedLaunchAsync(prepared.SessionId, default);
+        check(wire.Calls.Last().EndsWith("/allow-launch"), "baseline confirmation uses authenticated account endpoint");
         wire.Url = "http://attacker.invalid/stream/v5/index.html#warm-1/" + new string('a',64);
         await Reject(() => backend.PlayPreparedSessionAsync("warm-1", "steam-2868840", default));
         check(true, "prepared webview URL must belong to the configured backend");
@@ -67,11 +95,17 @@ static class PrewarmChecks
     private static async Task Reject(Func<Task> action)
     { try { await action(); } catch { return; } throw new Exception("Expected rejection"); }
 
-    private sealed class FakeWarmBackend : IPreparedSessionBackend
+    private sealed class FakeWarmBackend : IPreparedSessionBackend, IDeferredPreparedSessionBackend
     {
         public List<string> PrepareIds = new();
         public TaskCompletionSource<bool> Pending;
         public bool FailFirstPrepare, ExpireFirstPlay, Disabled;
+        public bool DeferredUnsupported;
+        public Task<CloudSession> ConnectPreparedSessionAsync(string id, string game, CancellationToken ct)
+        {
+            if (DeferredUnsupported) throw new DeferredLaunchUnavailableException();
+            return Task.FromResult(new CloudSession { SessionId = id, GameId = game, LaunchDeferred = true });
+        }
         public int Plays, Stops, Legacy;
         public async Task<PreparedCloudSession> PrepareSessionAsync(string requestId, CancellationToken ct)
         {
@@ -96,12 +130,13 @@ static class PrewarmChecks
         public List<string> Calls = new();
         public string Url = "http://localhost:5010/stream/v5/index.html#warm-1/" + new string('a',64);
         public HttpStatusCode Status = HttpStatusCode.OK;
+        public bool Deferred;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Calls.Add(request.RequestUri.AbsolutePath);
             object body = request.RequestUri.AbsolutePath.EndsWith("/prepare")
                 ? new { sessionId = "warm-1", gameId = "steam-2868840", expiresAt = DateTimeOffset.UtcNow.AddMinutes(9) }
-                : new { sessionId = "warm-1", gameId = "steam-2868840", streamUrl = Url };
+                : new { sessionId = "warm-1", gameId = "steam-2868840", streamUrl = Url, launchDeferred = Deferred };
             return Task.FromResult(new HttpResponseMessage(Status) { Content = new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json") });
         }
     }

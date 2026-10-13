@@ -52,6 +52,11 @@ namespace Playnite.HoleInOne
             steamId = ActiveSteamId();
             var result = await CallAsync(new { operation = "session", steamId, appId, tokenPath = TokenPath }, "ready", null, ct);
             if ((string)result["steamId"] != steamId || (uint?)result["appId"] != appId) throw new InvalidDataException("Steam 세이브 연결 응답이 일치하지 않음.");
+            VerifyAccount();
+        }
+        public void VerifyAccount()
+        {
+            if (ActiveSteamId() != steamId) throw new InvalidOperationException("Steam 계정이 변경되어 전환을 중단함.");
         }
         public async Task SyncAsync(string archive, string sha256, CancellationToken ct)
         {

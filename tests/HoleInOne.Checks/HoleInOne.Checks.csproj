@@ -7,6 +7,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="ReceiptChecks.cs" />
+    <Compile Include="ParallelChecks.cs" />
+    <Compile Include="../../source/Playnite/HoleInOne/ParallelPreparation.cs" Link="ParallelPreparation.cs" />
+    <Compile Include="../../source/Playnite/HoleInOne/ExportReceiptOutbox.cs" Link="ExportReceiptOutbox.cs" />
     <Compile Include="PrewarmChecks.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/PreparedSessionManager.cs" Link="PreparedSessionManager.cs" />
     <Compile Include="StoreChecks.cs" />

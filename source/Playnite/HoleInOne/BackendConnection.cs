@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 namespace Playnite.HoleInOne
 {
     // Uses the same HTTP contract as the Backend project. No Playnite service calls.
-    public sealed class BackendConnection : IDisposable, IPreparedSessionBackend
+    public sealed class BackendConnection : IDisposable, IPreparedSessionBackend, IDeferredPreparedSessionBackend
     {
         private readonly HttpClient client;
 
@@ -80,9 +80,19 @@ namespace Playnite.HoleInOne
         }
 
         public async Task<CloudSession> PlayPreparedSessionAsync(string sessionId, string gameId, CancellationToken ct)
+            => await ClaimPreparedSessionAsync(sessionId, gameId, false, ct).ConfigureAwait(false);
+
+        public async Task<CloudSession> ConnectPreparedSessionAsync(string sessionId, string gameId, CancellationToken ct)
+            => await ClaimPreparedSessionAsync(sessionId, gameId, true, ct).ConfigureAwait(false);
+
+        public Task AllowPreparedLaunchAsync(string sessionId, CancellationToken ct) =>
+            PostEmptyAsync(SessionPath(sessionId) + "/allow-launch", null, ct);
+
+        private async Task<CloudSession> ClaimPreparedSessionAsync(string sessionId, string gameId, bool deferred, CancellationToken ct)
         {
             ValidateId(gameId);
-            var session = await SendAsync<CloudSession>(HttpMethod.Post, SessionPath(sessionId) + "/play", new { gameId }, ct).ConfigureAwait(false);
+            var session = await SendAsync<CloudSession>(HttpMethod.Post, SessionPath(sessionId) + (deferred ? "/connect-only" : "/play"), new { gameId }, ct).ConfigureAwait(false);
+            if (deferred && !session.LaunchDeferred) throw new InvalidDataException("게임 시작 대기를 확인하지 못했습니다.");
             if (session.SessionId != sessionId || session.GameId != gameId) throw new InvalidDataException("요청한 게임과 준비된 세션이 다릅니다.");
             // Only the configured backend may serve the V5 signalling page. Legacy cloud URLs
             // still require HTTPS; this exception preserves the existing explicit HTTP dev setup.
@@ -216,12 +226,14 @@ namespace Playnite.HoleInOne
 
                 using (var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false))
                 {
+                    if (response.StatusCode == System.Net.HttpStatusCode.NotFound && path.EndsWith("/connect-only", StringComparison.Ordinal))
+                        throw new DeferredLaunchUnavailableException();
                     // Do not include response bodies or authentication values in error messages.
                     if (path == "v1/holeinone/sessions/prepare" &&
                         (response.StatusCode == System.Net.HttpStatusCode.NotFound || response.StatusCode == System.Net.HttpStatusCode.Conflict))
                         throw new PrewarmingUnavailableException();
                     if ((response.StatusCode == System.Net.HttpStatusCode.Gone || (response.StatusCode == System.Net.HttpStatusCode.NotFound && path.EndsWith("/play", StringComparison.Ordinal))) &&
-                        (path == "v1/holeinone/sessions/prepare" || path.EndsWith("/play", StringComparison.Ordinal)))
+                            (path == "v1/holeinone/sessions/prepare" || path.EndsWith("/play", StringComparison.Ordinal) || path.EndsWith("/connect-only", StringComparison.Ordinal)))
                         throw new PreparedSessionExpiredException();
                     if (!response.IsSuccessStatusCode)
                     {
@@ -339,6 +351,7 @@ namespace Playnite.HoleInOne
         public string SessionId { get; set; }
         public string GameId { get; set; }
         public string StreamUrl { get; set; }
+        public bool LaunchDeferred { get; set; }
     }
 
     public sealed class ExportHandoffStatus
