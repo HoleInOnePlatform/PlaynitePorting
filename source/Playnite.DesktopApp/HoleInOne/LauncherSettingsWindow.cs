@@ -1,6 +1,8 @@
 using Playnite.HoleInOne;
 using System;
 using System.IO;
+using System.Linq;
+using System.Collections.Generic;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -16,7 +18,9 @@ namespace Playnite.DesktopApp.HoleInOne
             Resources.Add(typeof(TextBlock), Application.Current.FindResource("BaseTextBlockStyle"));
             ShowMinimizeButton = false; ShowMaximizeButton = false;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            var panel = new StackPanel { Margin = new Thickness(20) }; Content = panel;
+            MaxHeight = SystemParameters.WorkArea.Height * 0.9;
+            var panel = new StackPanel { Margin = new Thickness(20) };
+            Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
             if (!string.IsNullOrWhiteSpace(LauncherLogin.Username))
             {
                 panel.Children.Add(new TextBlock { Text = "로그인 계정: " + LauncherLogin.Username, Margin = new Thickness(0, 0, 0, 16) });
@@ -45,6 +49,8 @@ namespace Playnite.DesktopApp.HoleInOne
                 };
             }
             AddDevelopmentServerSettings(panel);
+            AddStorageSettings(panel);
+            AddProtectedGamesSettings(panel);
             AddStoreSettings(panel, "Steam 연동 설정", BuiltinStoreLibrary.SteamId);
             AddStoreSettings(panel, "Epic 연동 설정", BuiltinStoreLibrary.EpicId);
             panel.Children.Add(new TextBlock
@@ -54,6 +60,114 @@ namespace Playnite.DesktopApp.HoleInOne
             });
             var close = new Button { Content = "닫기", Margin = new Thickness(0, 5, 0, 0) }; panel.Children.Add(close);
             close.Click += (sender, args) => Close();
+        }
+
+        private void AddStorageSettings(Panel panel)
+        {
+            var settings = LauncherSettings.Load();
+            panel.Children.Add(new TextBlock { Text = "저장공간 관리", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 12, 0, 8) });
+            panel.Children.Add(new TextBlock { Text = "Steam 설치 폴더 (등록된 라이브러리의 steamapps\\common)" });
+            var steam = new TextBox { Text = settings.SteamInstallDirectory, Margin = new Thickness(0, 4, 0, 8) };
+            panel.Children.Add(steam);
+            panel.Children.Add(new TextBlock { Text = "Epic 설치 폴더" });
+            var epic = new TextBox { Text = settings.DownloadDirectory, Margin = new Thickness(0, 4, 0, 8) };
+            panel.Children.Add(epic);
+            panel.Children.Add(new TextBlock { Text = "최대 저장공간 (두 폴더 합계, GiB / 1 GiB = 1,024³ 바이트)" });
+            var maximum = new TextBox { Text = settings.MaximumStorageGiB.ToString(), Margin = new Thickness(0, 4, 0, 8) };
+            panel.Children.Add(maximum);
+            panel.Children.Add(new TextBlock { Text = "설치 시 용량 한도를 넘으면 가장 오래 플레이하지 않은 게임부터 정리 대상을 계산하고, 추가 확인 없이 해당 게임을 자동 제거합니다. 플레이 기록이 없는 게임을 먼저 정리하며 실행 중인 게임은 제외합니다. 폴더 변경은 다음 설치부터 적용되며 기존 게임을 이동하지 않습니다. Steam 새 위치는 Steam 설정 → 저장공간에서 먼저 등록해 주세요.", TextWrapping = TextWrapping.Wrap });
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+            var save = new Button { Content = "저장공간 설정 저장", Margin = new Thickness(0, 0, 8, 0) };
+            var refresh = new Button { Content = "현재 사용량 확인" };
+            actions.Children.Add(save); actions.Children.Add(refresh); panel.Children.Add(actions);
+            var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 12) };
+            panel.Children.Add(status);
+            save.Click += async (sender, args) =>
+            {
+                save.IsEnabled = refresh.IsEnabled = steam.IsEnabled = epic.IsEnabled = maximum.IsEnabled = false;
+                try
+                {
+                    if (StorageManagement.IsBusy) throw new InvalidOperationException("게임 설치가 끝난 뒤 저장공간 설정을 변경해 주세요.");
+                    if (!long.TryParse(maximum.Text, out var capacity)) throw new ArgumentException("최대 용량은 GiB 단위의 정수로 입력해 주세요.");
+                    var updated = LauncherSettings.Load();
+                    updated.SteamInstallDirectory = steam.Text.Trim(); updated.DownloadDirectory = epic.Text.Trim();
+                    updated.MaximumStorageGiB = capacity;
+                    updated.ValidateStorage();
+                    status.Text = "현재 사용량 확인 중…";
+                    var used = await System.Threading.Tasks.Task.Run(() => StorageManagement.Used(updated));
+                    if (used > checked((ulong)capacity * 1024 * 1024 * 1024) &&
+                        MessageBox.Show(this, $"현재 사용량({used / (1024d * 1024 * 1024):N2} GiB)이 설정할 최대 용량({capacity:N0} GiB)보다 큽니다.\n\n설정을 저장해도 지금 게임을 삭제하지 않습니다. 다음 설치 시 공간 확보가 필요하면 보호하지 않은 기존 게임을 추가 확인 없이 자동 제거합니다.\n\n이 용량으로 저장하시겠습니까?",
+                            "저장공간 한도 경고", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+                    { status.Text = "설정 저장을 취소했습니다. 기존 한도를 유지합니다."; return; }
+                    if (StorageManagement.IsBusy) throw new InvalidOperationException("게임 설치가 시작되어 설정을 저장하지 않았습니다. 설치 완료 후 다시 시도해 주세요.");
+                    if (!IsVisible) return;
+                    updated.ProtectedGameIds = LauncherSettings.Load().ProtectedGameIds;
+                    updated.Save();
+                    status.Text = "저장했습니다. 다음 설치부터 적용됩니다.";
+                }
+                catch (Exception error) { status.Text = error.Message; }
+                finally { save.IsEnabled = refresh.IsEnabled = steam.IsEnabled = epic.IsEnabled = maximum.IsEnabled = true; }
+            };
+            refresh.Click += async (sender, args) =>
+            {
+                refresh.IsEnabled = false; status.Text = "저장된 설치 폴더의 사용량 계산 중…";
+                try
+                {
+                    var current = LauncherSettings.Load();
+                    var used = await System.Threading.Tasks.Task.Run(() => StorageManagement.Used(current));
+                    status.Text = $"현재 사용량: {used / (1024d * 1024 * 1024):N2} GiB / 최대 {current.MaximumStorageGiB:N0} GiB";
+                }
+                catch (Exception error) { status.Text = "사용량 확인 실패: " + error.Message; }
+                finally { refresh.IsEnabled = true; }
+            };
+        }
+
+        private void AddProtectedGamesSettings(Panel panel)
+        {
+            panel.Children.Add(new TextBlock { Text = "자동 제거 제외 게임", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 12, 0, 6) });
+            panel.Children.Add(new TextBlock { Text = "체크한 게임은 공간 확보 과정에서 절대 제거하지 않습니다. 변경은 즉시 저장됩니다. 보호한 게임도 현재 사용량에는 포함되며, 공간이 부족하면 설치를 중단합니다.", TextWrapping = TextWrapping.Wrap });
+            var list = new StackPanel();
+            panel.Children.Add(new ScrollViewer { Content = list, MaxHeight = 220, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 8, 0, 4) });
+            var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 8) };
+            var refresh = new Button { Content = "설치된 게임 목록 새로고침" };
+            panel.Children.Add(refresh); panel.Children.Add(status);
+            Action reload = () =>
+            {
+                list.Children.Clear();
+                var settings = LauncherSettings.Load();
+                var games = DesktopApplication.Current.Database.Games.Where(game => game.IsInstalled).OrderBy(game => game.Name).ToList();
+                if (games.Count == 0) list.Children.Add(new TextBlock { Text = "현재 설치된 게임이 없습니다." });
+                foreach (var game in games)
+                {
+                    var checkbox = new CheckBox { Content = new TextBlock { Text = game.Name, TextWrapping = TextWrapping.Wrap, Foreground = System.Windows.Media.Brushes.White },
+                        IsChecked = settings.IsGameProtected(game.Id), Margin = new Thickness(0, 4, 0, 4), ToolTip = game.InstallDirectory };
+                    var reverting = false;
+                    RoutedEventHandler save = (sender, args) =>
+                    {
+                        if (reverting) return;
+                        try
+                        {
+                            if (StorageManagement.IsBusy) throw new InvalidOperationException("설치 또는 공간 확보가 진행 중입니다. 완료 후 보호 설정을 변경해 주세요.");
+                            var current = LauncherSettings.Load();
+                            current.ProtectedGameIds = current.ProtectedGameIds ?? new HashSet<Guid>();
+                            if (checkbox.IsChecked == true) current.ProtectedGameIds.Add(game.Id);
+                            else current.ProtectedGameIds.Remove(game.Id);
+                            current.Save();
+                            status.Text = checkbox.IsChecked == true ? game.Name + ": 자동 제거에서 제외했습니다." : game.Name + ": 자동 제거 제외를 해제했습니다.";
+                        }
+                        catch (Exception error)
+                        {
+                            status.Text = error.Message;
+                            reverting = true;
+                            checkbox.IsChecked = !checkbox.IsChecked;
+                            reverting = false;
+                        }
+                    };
+                    checkbox.Checked += save; checkbox.Unchecked += save; list.Children.Add(checkbox);
+                }
+            };
+            refresh.Click += (sender, args) => reload();
+            reload();
         }
 
         private void AddDevelopmentServerSettings(Panel panel)

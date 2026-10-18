@@ -1,4 +1,4 @@
-﻿using Playnite.Common;
+using Playnite.Common;
 using Playnite.SDK;
 using Playnite.SDK.Models;
 using System;
@@ -9,6 +9,7 @@ using SteamKit2;
 using System.IO;
 using Playnite.SDK.Plugins;
 using SteamLibrary.Services;
+using Playnite.HoleInOne;
 
 namespace SteamLibrary
 {
@@ -18,6 +19,7 @@ namespace SteamLibrary
         private readonly IPlayniteAPI playniteApi;
         private string requestedManifest;
         private DateTime initialManifestWriteTime;
+        private IDisposable storageLease;
 
         public SteamInstallController(Game game, IPlayniteAPI playniteApi) : base(game)
         {
@@ -30,30 +32,47 @@ namespace SteamLibrary
             watcherToken?.Cancel();
         }
 
-        public override void Install(InstallActionArgs args)
+        public override async void Install(InstallActionArgs args)
         {
-            if (!Steam.IsInstalled)
+            try
             {
-                throw new Exception("Steam installation not found.");
-            }
-
-            var gameId = Game.ToSteamGameID();
-            if (gameId.IsMod)
-            {
-                throw new NotSupportedException("Installing mods is not supported.");
-            }
-            else
-            {
-                var location = SteamInstallService.SelectLocation(playniteApi, Game.Name);
-                if (location == null)
+                if (!Steam.IsInstalled)
                 {
-                    InvokeOnInstallationCancelled(new GameInstallationCancelledEventArgs());
-                    return;
+                    throw new Exception("Steam installation not found.");
                 }
-                requestedManifest = Path.Combine(location.Path, "steamapps", $"appmanifest_{gameId.AppID}.acf");
-                initialManifestWriteTime = File.GetLastWriteTimeUtc(requestedManifest);
-                ProcessStarter.StartProcess(Steam.ClientExecPath, SteamInstallService.BuildArguments(gameId.AppID, location.Index));
-                StartInstallWatcher();
+
+                var gameId = Game.ToSteamGameID();
+                if (gameId.IsMod)
+                {
+                    throw new NotSupportedException("Installing mods is not supported.");
+                }
+                else
+                {
+                    var settings = LauncherSettings.Load();
+                    var location = SteamInstallService.ConfiguredLocation(settings.SteamInstallDirectory);
+                    if (location == null)
+                    {
+                        InvokeOnInstallationCancelled(new GameInstallationCancelledEventArgs());
+                        return;
+                    }
+                    storageLease = await StorageManagement.PrepareAsync(playniteApi, Game, Game.InstallSize ?? 0,
+                        settings, settings.SteamInstallDirectory);
+                    requestedManifest = Path.Combine(location.Path, "steamapps", $"appmanifest_{gameId.AppID}.acf");
+                    initialManifestWriteTime = File.GetLastWriteTimeUtc(requestedManifest);
+                    ProcessStarter.StartProcess(Steam.ClientExecPath, SteamInstallService.BuildArguments(gameId.AppID, location.Index));
+                    StartInstallWatcher();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                storageLease?.Dispose(); storageLease = null;
+                InvokeOnInstallationCancelled(new GameInstallationCancelledEventArgs());
+            }
+            catch (Exception error)
+            {
+                storageLease?.Dispose(); storageLease = null;
+                InvokeOnInstallationCancelled(new GameInstallationCancelledEventArgs());
+                playniteApi.Dialogs.ShowErrorMessage(error.Message, "HoleInOne · 저장공간 / 설치");
             }
         }
 
@@ -109,6 +128,7 @@ namespace SteamLibrary
                     playniteApi.Dialogs.ShowErrorMessage(error.Message, "HoleInOne · 다운로드 시작 실패");
                 }
             }
+            finally { storageLease?.Dispose(); storageLease = null; }
         }
     }
 

@@ -5,6 +5,12 @@ static class LauncherSettingsChecks
 {
     public static void Run(Action<bool, string> check)
     {
+        var protectedId = Guid.NewGuid();
+        var saved = new LauncherSettings { MaximumStorageGiB = 100 };
+        saved.ProtectedGameIds.Add(protectedId);
+        var restored = JsonConvert.DeserializeObject<LauncherSettings>(JsonConvert.SerializeObject(saved));
+        check(restored.IsGameProtected(protectedId) && !restored.IsGameProtected(Guid.NewGuid()), "game protection survives settings reload and applies only to selected IDs");
+        check(!JsonConvert.DeserializeObject<LauncherSettings>("{\"ProtectedGameIds\":null}").IsGameProtected(protectedId), "legacy or null protection list is supported");
         var root = Path.Combine(Path.GetTempPath(), "HoleInOne-Address-" + Guid.NewGuid().ToString("N"));
         try
         {

@@ -43,7 +43,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 // Startup already completed the login dialog. Do not show another dialog here.
                 if (settings.RequireLogin && string.IsNullOrEmpty(LauncherLogin.TokenFor(settings))) return;
                 new ExportReceipts(settings).Start();
-                await Get(settings).PrepareAsync(CancellationToken.None);
+                await Get(settings).PrepareWithRetriesAsync(CancellationToken.None);
             }
             catch (Exception error)
             {

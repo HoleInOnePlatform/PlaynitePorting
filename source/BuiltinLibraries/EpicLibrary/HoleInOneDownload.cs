@@ -66,16 +66,27 @@ namespace EpicLibrary
                 if (string.IsNullOrWhiteSpace(Game.GameId) || Game.GameId.Any(c => !char.IsLetterOrDigit(c) && c != '-' && c != '_'))
                     throw new InvalidOperationException("게임 ID 형식이 올바르지 않음.");
                 await HoleInOneDownload.Authenticate(plugin);
-                await LegendaryTool.RunAsync("-y", "install", Game.GameId, "--base-path", LauncherSettings.Load().DownloadDirectory,
+                var files = JArray.Parse(await LegendaryTool.RunAsync("list-files", Game.GameId, "--json", "--force-download"));
+                ulong required = 0;
+                foreach (var file in files) required = checked(required + (ulong)file["file_size"]);
+                var settings = LauncherSettings.Load();
+                using (await StorageManagement.PrepareAsync(plugin.PlayniteApi, Game, required, settings, settings.DownloadDirectory))
+                {
+                await LegendaryTool.RunAsync("-y", "install", Game.GameId, "--base-path", settings.DownloadDirectory,
                     "--game-folder", Game.GameId, "--skip-dlcs");
                 var installed = await Task.Run(() => HoleInOneDownload.Installed());
                 if (!installed.TryGetValue(Game.GameId, out var game)) throw new InvalidOperationException("Epic 설치 파일 확인에 실패함.");
                 InvokeOnInstalled(new GameInstalledEventArgs(new GameInstallationData { InstallDirectory = game.InstallDirectory }));
+                }
             }
-            catch (Exception)
+            catch (OperationCanceledException)
             {
                 InvokeOnInstallationCancelled(new GameInstallationCancelledEventArgs());
-                plugin.PlayniteApi.Dialogs.ShowErrorMessage("Epic 다운로드를 완료하지 못함. Epic 연동 설정의 인증과 저장 공간을 확인해야 함.", "HoleInOne");
+            }
+            catch (Exception error)
+            {
+                InvokeOnInstallationCancelled(new GameInstallationCancelledEventArgs());
+                plugin.PlayniteApi.Dialogs.ShowErrorMessage(error.Message, "HoleInOne · 저장공간 / 설치");
             }
         }
         // Closing the cloud window must not cancel the download.

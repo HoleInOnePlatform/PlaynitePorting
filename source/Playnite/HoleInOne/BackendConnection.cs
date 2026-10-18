@@ -94,13 +94,19 @@ namespace Playnite.HoleInOne
             var session = await SendAsync<CloudSession>(HttpMethod.Post, SessionPath(sessionId) + (deferred ? "/connect-only" : "/play"), new { gameId }, ct).ConfigureAwait(false);
             if (deferred && !session.LaunchDeferred) throw new InvalidDataException("게임 시작 대기를 확인하지 못했습니다.");
             if (session.SessionId != sessionId || session.GameId != gameId) throw new InvalidDataException("요청한 게임과 준비된 세션이 다릅니다.");
-            // Only the configured backend may serve the V5 signalling page. Legacy cloud URLs
-            // still require HTTPS; this exception preserves the existing explicit HTTP dev setup.
+            // A local backend may advertise its public HTTPS tunnel for cloud callbacks.
+            // Never navigate that advertised origin: use the configured loopback server instead.
             var expected = new Uri(client.BaseAddress, "stream/v5/index.html");
             if (!Uri.TryCreate(session.StreamUrl, UriKind.Absolute, out var uri) || uri.UserInfo.Length != 0 ||
-                uri.GetLeftPart(UriPartial.Path) != expected.AbsoluteUri || uri.Query.Length != 0 ||
+                uri.Query.Length != 0 ||
                 !System.Text.RegularExpressions.Regex.IsMatch(uri.Fragment, "^#" + sessionId + "/[a-fA-F0-9]{64}$"))
                 throw new InvalidDataException("준비된 세션의 연결 주소를 확인할 수 없습니다.");
+            if (uri.GetLeftPart(UriPartial.Path) != expected.AbsoluteUri)
+            {
+                if (!client.BaseAddress.IsLoopback || uri.Scheme != "https" || uri.AbsolutePath != expected.AbsolutePath)
+                    throw new InvalidDataException("준비된 세션의 연결 주소를 확인할 수 없습니다.");
+                session.StreamUrl = expected.AbsoluteUri + uri.Fragment;
+            }
             return session;
         }
 
@@ -217,6 +223,39 @@ namespace Playnite.HoleInOne
 
         private async Task<T> SendAsync<T>(HttpMethod method, string path, object body, CancellationToken cancellationToken)
         {
+            int? status = null;
+            try
+            {
+                return await SendCoreAsync<T>(method, path, body, cancellationToken, value => status = value).ConfigureAwait(false);
+            }
+            catch (Exception error)
+            {
+                if (status.HasValue) error.Data["HioHttpStatus"] = status.Value;
+                throw;
+            }
+        }
+
+        // Diagnostic fields are codes only: exception messages can contain URLs or credentials.
+        public static string DescribeFailure(Exception error, CancellationToken cancellationToken)
+        {
+            var result = "exception=" + error.GetType().Name + " http_status=" +
+                (error.Data["HioHttpStatus"] is int status ? status.ToString(System.Globalization.CultureInfo.InvariantCulture) : "none");
+            if (error is OperationCanceledException)
+                result += " reason=" + (cancellationToken.IsCancellationRequested ? "cancelled" : "timeout");
+            int depth = 0;
+            for (var cause = error; cause != null && depth < 8; cause = cause.InnerException, depth++)
+            {
+                result += " cause" + depth + "=" + cause.GetType().Name + " hresult" + depth + "=" + cause.HResult;
+                if (cause is System.Net.Sockets.SocketException socket)
+                    result += " socket_error=" + socket.SocketErrorCode + " native_error=" + socket.NativeErrorCode;
+                if (cause is System.Net.WebException web)
+                    result += " web_error=" + web.Status;
+            }
+            return result;
+        }
+
+        private async Task<T> SendCoreAsync<T>(HttpMethod method, string path, object body, CancellationToken cancellationToken, Action<int> recordStatus)
+        {
             using (var request = new HttpRequestMessage(method, path))
             {
                 if (body != null)
@@ -226,6 +265,7 @@ namespace Playnite.HoleInOne
 
                 using (var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false))
                 {
+                    recordStatus((int)response.StatusCode);
                     if (response.StatusCode == System.Net.HttpStatusCode.NotFound && path.EndsWith("/connect-only", StringComparison.Ordinal))
                         throw new DeferredLaunchUnavailableException();
                     // Do not include response bodies or authentication values in error messages.

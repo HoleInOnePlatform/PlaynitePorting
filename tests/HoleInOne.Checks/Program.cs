@@ -148,6 +148,7 @@ finally { Directory.Delete(root, true); }
 await PrewarmChecks.RunAsync(Check);
 StoreChecks.Run(Check);
 LauncherSettingsChecks.Run(Check);
+StorageChecks.Run(Check);
 var completedAt = DateTimeOffset.Parse("2026-10-03T12:00:00+09:00");
 var deadline = new HandoffDeadline(completedAt);
 Check(deadline.RemainingSeconds(completedAt) == 3600, "download completion starts a 60 minute countdown");
