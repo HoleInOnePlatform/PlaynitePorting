@@ -116,6 +116,13 @@ namespace SteamLibrary
     {
         private CancellationTokenSource watcherToken;
 
+        public override Task UninstallAsync(UninstallActionArgs args)
+        {
+            // Steam can block while forwarding the command to its running client.
+            // Keep process startup off the UI thread; the caller handles launch errors.
+            return Task.Run(() => Uninstall(args));
+        }
+
         public SteamUninstallController(Game game) : base(game)
         {
             Name = "Uninstall using Steam";
@@ -140,7 +147,9 @@ namespace SteamLibrary
             }
             else
             {
-                ProcessStarter.StartUrl($"steam://uninstall/{gameId.AppID}");
+                var requestTimer = Stopwatch.StartNew();
+                using (ProcessStarter.StartProcess(Steam.ClientExecPath, $"-silent +app_uninstall {gameId.AppID}")) { }
+                LogManager.GetLogger().Info($"Steam uninstall request dispatched in {requestTimer.ElapsedMilliseconds} ms.");
                 StartUninstallWatcher();
             }
         }

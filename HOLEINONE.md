@@ -10,6 +10,7 @@
 - 최상위는 `Start-HoleInOne.cmd`, `READ-ME.txt`, `App`, `Docs`, `Diagnostics`의 5개 항목임. 전체 압축 해제 후 시작 파일 실행. 팀 테스트 사용자 데이터 경로는 유지함.
 - 실행 파일·DLL·브라우저 리소스·라이선스는 상대 경로를 유지한 채 `App`에 보관함. 사용 안내는 `Docs`, 서버 확인 및 안전 모드 실행은 `Diagnostics`에 있음.
 - 앞으로 `Prepare-DevelopmentPackage.ps1`도 이 구조의 ZIP과 `<ZIP 이름>-Package` 폴더를 생성함. 원본 빌드 폴더는 유지함.
+- 로컬 테스트 전달도 `Build-HoleInOne.ps1`의 원시 출력물을 직접 전달하지 말고 `New-HoleInOnePackage.ps1`로 위 구조를 생성함. 원시 출력은 `artifacts/.build/<빌드명>`에 두고 사용자에게는 패키지 루트의 `Start-HoleInOne.cmd`를 안내함. 기존 테스트의 `--userdatadir` 경로를 시작 파일에 유지해야 함.
 - 기존 빌드 재패키징: `./build/New-HoleInOnePackage.ps1 -ApplicationDirectory <빌드 폴더> -OutputDirectory <새 배포 폴더> -OutputZip <새 ZIP 경로>`. 기존 대상은 덮어쓰지 않음.
 - 검증: 993개 보존 파일의 SHA-256 일치, ZIP 필수 파일·구조 확인. 독립 실행 검사는 원본과 정리본 모두 시작 직후 종료되어 완료하지 못함. 실제 로그인·게임 실행은 재검증하지 않음.
 
@@ -100,6 +101,10 @@ AWS 전환 설정은 [EXPORT_HANDOFF.md](../Backend/EXPORT_HANDOFF.md) 참고. �
 5. 미설치 게임의 플레이 버튼을 누름. Steam 저장 위치가 하나면 바로 설치를 요청하고, 여러 개면 HoleInOne에서 위치를 선택함. AWS 스트리밍 페이지의 시작 조작이 표시되면 진행함.
 
 Steam 다운로드는 `steam.exe -silent +app_install <AppID> <volumeindex>`로 요청함. Steam에 등록된 저장 위치만 사용하며, 위치 선택을 취소하면 다운로드하지 않음. Steam의 설치 확인 URL은 호출하지 않음. 로그인·클라이언트 업데이트 등의 Steam 화면까지 생략하는 것은 보장하지 않음. 2분 안에 설치 파일 갱신이나 설치 완료가 확인되지 않으면 HoleInOne에서 실패를 안내함. 명령은 Steam 내부 인터페이스이므로 클라이언트 업데이트에 따른 호환성 확인이 필요함. 자동 검사와 빌드 외에 실제 계정의 다운로드·창 표시 여부는 별도 실기기 검증 대상임.
+
+Steam 게임 제거는 `steam.exe -silent +app_uninstall <AppID>`로 요청하며 `steam://uninstall` URL을 호출하지 않음. 기존 설치 상태 감시로 제거 완료를 반영함. Steam 내부 명령이므로 실제 제거 및 확인창 생략 여부는 사용자 실기기 검증 대상임.
+
+2026-10-18 사용자 테스트에서 실제 제거 및 제거 확인창 생략을 확인함. Steam 메인 창은 여전히 표시됨. `-silent` 외에 이 제거 명령의 창 표시를 확실히 차단하는 지원 옵션은 확인되지 않음. Steam 요청 실행은 백그라운드로 이동하고 요청 반환 시간을 로그에 기록함. 기존 제거 컨트롤러는 기본 동기 호출을 유지하며 Steam만 비동기 실행함. 요청 실패는 기존 오류 표시·제거 중 상태 해제 경로로 처리함. 응답 없음 개선 여부는 후속 실기기 검증 대상임.
 
 앱 설정은 지정한 사용자 데이터 폴더의 `holeinone.json`, 원본 스토어 연동 설정·인증 정보는 `ExtensionsData` 아래 해당 모듈 폴더에 저장됨. Steam 웹뷰 쿠키와 Epic 다운로드 도구의 `HoleInOne/Epic` 정보도 같은 사용자 데이터 폴더를 사용함. 기존 자체 연동에서 원본 애드온으로 바뀌었으므로 원본 설정 화면에서 최초 인증이 필요함. 설정·인증 데이터는 공유하거나 저장소에 추가하지 않아야 함.
 
