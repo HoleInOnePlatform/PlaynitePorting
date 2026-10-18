@@ -45,6 +45,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 var key = BuiltinStoreLibrary.GameKey(game);
                 var settings = LauncherSettings.Load();
                 if (!LauncherLogin.EnsureSignedIn(settings)) return;
+                if (settings.RequireLogin && (!SteamLinkContext.IsConfigured || !(await SteamLinkContext.RefreshAsync(play.Closed.Token)).IsLinked)) throw new SteamLinkException("steam_link_required");
                 if (settings.SteamCloudUploadEnabled && key.StartsWith("steam-", StringComparison.Ordinal) && uint.TryParse(key.Substring(6), out var steamAppId))
                 {
                     // Capture the remote baseline before cloud gameplay, not after the export arrives.
@@ -120,6 +121,7 @@ namespace Playnite.DesktopApp.HoleInOne
                         {
                             // Save destinations and Steam identity are irrelevant when there is no save.
                             var roots = LocalRoots(game.InstallDirectory);
+                            SteamLinkContext.RequireLocalAccount();
                             var value = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam\ActiveProcess", "ActiveUser", null);
                             var account = value is int signed ? unchecked((uint)signed) : value is uint unsigned ? unsigned : 0;
                             var accountId = account == 0 ? null : account.ToString(CultureInfo.InvariantCulture);

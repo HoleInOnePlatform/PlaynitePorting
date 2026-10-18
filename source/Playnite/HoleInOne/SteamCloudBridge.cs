@@ -13,8 +13,8 @@ namespace Playnite.HoleInOne
     public sealed class SteamCloudBridge : IDisposable
     {
         public static string ExecutablePath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Tools", "SteamCloud", "HoleInOne.SteamCloud.exe");
-        public static string TokenPath => Path.Combine(PlaynitePaths.ConfigRootPath, "HoleInOne", "SteamCloud", "login.dat");
-        public static bool IsLinked => File.Exists(TokenPath);
+        public static string TokenPath => SteamLinkContext.IsConfigured ? SteamLinkContext.TokenPath : Path.Combine(PlaynitePaths.ConfigRootPath, "HoleInOne", "SteamCloud", "login.dat");
+        public static bool IsLinked => SteamLinkContext.IsConfigured ? SteamLinkContext.HasLocalLogin : File.Exists(TokenPath);
         private readonly Process process;
         private readonly SemaphoreSlim commands = new SemaphoreSlim(1);
         private bool disposed;
@@ -49,7 +49,13 @@ namespace Playnite.HoleInOne
         }
         public async Task PrepareAsync(uint appId, CancellationToken ct)
         {
-            steamId = ActiveSteamId();
+            if (SteamLinkContext.IsConfigured)
+            {
+                await SteamLinkContext.RefreshAsync(ct);
+                if (!SteamLinkContext.HasLocalLogin) throw new SteamLinkException("steam_link_required");
+                steamId = SteamLinkContext.Current.SteamId;
+            }
+            else steamId = ActiveSteamId();
             var result = await CallAsync(new { operation = "session", steamId, appId, tokenPath = TokenPath }, "ready", null, ct);
             if ((string)result["steamId"] != steamId || (uint?)result["appId"] != appId) throw new InvalidDataException("Steam 세이브 연결 응답이 일치하지 않음.");
         }

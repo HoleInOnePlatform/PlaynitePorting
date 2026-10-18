@@ -32,6 +32,7 @@ namespace SteamLibrary
 
         public override void Install(InstallActionArgs args)
         {
+            Playnite.HoleInOne.SteamLinkContext.RequireLocalAccount();
             if (!Steam.IsInstalled)
             {
                 throw new Exception("Steam installation not found.");
@@ -195,6 +196,7 @@ namespace SteamLibrary
 
         public override void Play(PlayActionArgs args)
         {
+            Playnite.HoleInOne.SteamLinkContext.RequireLocalAccount();
             Dispose();
 
             var steamExe = Steam.ClientExecPath;

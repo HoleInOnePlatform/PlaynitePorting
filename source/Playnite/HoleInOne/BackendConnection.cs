@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 namespace Playnite.HoleInOne
 {
     // Uses the same HTTP contract as the Backend project. No Playnite service calls.
-    public sealed class BackendConnection : IDisposable, IPreparedSessionBackend
+    public sealed partial class BackendConnection : IDisposable, IPreparedSessionBackend
     {
         private readonly HttpClient client;
 
@@ -46,7 +46,7 @@ namespace Playnite.HoleInOne
                 ? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
                 : new HttpClient(handler);
             client.BaseAddress = address;
-            client.Timeout = TimeSpan.FromSeconds(15);
+            client.Timeout = TimeSpan.FromSeconds(90);
             if (!string.IsNullOrWhiteSpace(bearerToken))
             {
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
@@ -216,6 +216,14 @@ namespace Playnite.HoleInOne
 
                 using (var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false))
                 {
+                    if (!response.IsSuccessStatusCode && (path == "v1/holeinone/sessions/prepare" || path.EndsWith("/play", StringComparison.Ordinal)))
+                    {
+                        var errorBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        BackendError detail = null;
+                        try { if (errorBody.Length < 4096) detail = JsonConvert.DeserializeObject<BackendError>(errorBody); } catch (JsonException) { }
+                        if (detail?.ErrorCode != null && (detail.ErrorCode.StartsWith("steam_", StringComparison.Ordinal) || detail.ErrorCode == "https_required"))
+                            throw new SteamLinkException(detail.ErrorCode);
+                    }
                     // Do not include response bodies or authentication values in error messages.
                     if (path == "v1/holeinone/sessions/prepare" &&
                         (response.StatusCode == System.Net.HttpStatusCode.NotFound || response.StatusCode == System.Net.HttpStatusCode.Conflict))
@@ -315,6 +323,7 @@ namespace Playnite.HoleInOne
 
     public sealed class AccountLogin
     {
+        public string AccountId { get; set; }
         public string AccessToken { get; set; }
         public DateTimeOffset ExpiresAt { get; set; }
         public string Username { get; set; }

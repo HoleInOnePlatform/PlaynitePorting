@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><TargetFramework>net462</TargetFramework><LangVersion>12</LangVersion><EnableDefaultCompileItems>false</EnableDefaultCompileItems><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
+<ItemGroup>
+<Reference Include="PresentationCore"/><Reference Include="PresentationFramework"/><Reference Include="WindowsBase"/><Reference Include="System.Xaml"/><Reference Include="System.Net.Http"/><Reference Include="System.IO.Compression.FileSystem"/>
+<PackageReference Include="System.IO.Compression" Version="4.3.0"/>
+<PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
+<Compile Include="HostContracts.cs"/>
+<Compile Include="../../source/Playnite/HoleInOne/BackendConnection.cs"/>
+<Compile Include="../../source/Playnite/HoleInOne/SteamLinkConnection.cs"/>
+<Compile Include="../../source/Playnite/HoleInOne/SteamLinkContext.cs"/>
+<Compile Include="../../source/Playnite/HoleInOne/SteamLinkBridge.cs"/>
+<Compile Include="../../source/Playnite/HoleInOne/SteamCloudBridge.cs"/>
+<Compile Include="../../source/Playnite/HoleInOne/PreparedSessionManager.cs"/>
+<Compile Include="../../source/Playnite/HoleInOne/LauncherSettings.cs"/>
+<Compile Include="../../source/Playnite/HoleInOne/ServiceConfiguration.cs"/>
+<Compile Include="../../source/Playnite/HoleInOne/ExportSaveInstaller.cs"/>
+<Compile Include="../../source/Playnite.DesktopApp/HoleInOne/SteamSetupWindow.cs"/>
+<Compile Include="../../source/Playnite.DesktopApp/HoleInOne/AccountLoginWindow.cs"/>
+<Compile Include="../../source/Playnite.DesktopApp/HoleInOne/CloudPreparation.cs"/>
+<Compile Include="../../source/Playnite.DesktopApp/HoleInOne/LauncherSettingsWindow.cs"/>
+</ItemGroup></Project>

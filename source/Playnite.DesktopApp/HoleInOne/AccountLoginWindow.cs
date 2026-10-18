@@ -78,10 +78,12 @@ namespace Playnite.DesktopApp.HoleInOne
             var dialog = new AccountLoginWindow(settings.BackendUrl) { Owner = Application.Current.MainWindow };
             if (dialog.ShowDialog() != true) return false;
             account = dialog.Account; service = settings.BackendUrl;
+            if (!string.IsNullOrEmpty(account.AccountId) && new Uri(service).Scheme == "https")
+                SteamLinkContext.Configure(service, account.AccountId, account.AccessToken);
             return true;
         }
         public static string TokenFor(LauncherSettings settings) => settings.RequireLogin
             ? (service == settings.BackendUrl ? account?.AccessToken : null) : settings.BearerToken;
-        public static void Forget() { account = null; service = null; }
+        public static void Forget() { account = null; service = null; SteamLinkContext.Forget(); }
     }
 }

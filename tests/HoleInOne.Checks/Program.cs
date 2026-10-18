@@ -144,6 +144,7 @@ try
 }
 finally { Directory.Delete(root, true); }
 await PrewarmChecks.RunAsync(Check);
+await SteamLinkChecks.RunAsync(Check);
 StoreChecks.Run(Check);
 LauncherSettingsChecks.Run(Check);
 var completedAt = DateTimeOffset.Parse("2026-10-03T12:00:00+09:00");

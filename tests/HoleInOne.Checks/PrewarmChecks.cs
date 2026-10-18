@@ -47,6 +47,13 @@ static class PrewarmChecks
         await sessions.PrepareAsync(default); await sessions.PlayAsync("steam-2868840", default);
         check(cloud.Legacy == 1 && cloud.PrepareIds.Count == 1, "older/disabled backend retains existing streaming behavior");
 
+        cloud = new FakeWarmBackend { Disabled = true }; sessions = new PreparedSessionManager(cloud, requirePreparation: true);
+        await Reject(() => sessions.PlayAsync("steam-2868840", default));
+        check(cloud.Legacy == 0, "account mode never falls back to fixed test authentication on disabled preparation");
+        cloud = new FakeWarmBackend(); sessions = new PreparedSessionManager(cloud, requirePreparation: true);
+        await Reject(() => sessions.PlayAsync("steam-other", default));
+        check(cloud.Legacy == 0, "unsupported game cannot bypass per-user preparation");
+
         cloud = new FakeWarmBackend { Pending = new TaskCompletionSource<bool>() }; sessions = new PreparedSessionManager(cloud);
         startup = sessions.PrepareAsync(default); var stop = sessions.StopAsync(default);
         cloud.Pending.SetResult(true); await startup; await stop;

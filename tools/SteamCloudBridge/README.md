@@ -2,7 +2,14 @@
 
 SteamKit2 3.4.0 기반 Windows 전용 사용자 계정 업로드 모듈. .NET Framework 데스크톱과 버전을 격리함. 게임별 개발자 OAuth Client ID를 요구하지 않으며 사용자 Steam 인증을 사용함. 실제 Steam 서버의 접근 허용과 앱별 호환성은 실환경 확인 대상임.
 
-## 사용
+## 통합 연결 경로
+
+계정 로그인 배포에서는 최초 설정의 Steam 연결을 사용합니다. 서버 등록 후 저장된
+`HoleInOne/SteamLinks/<서버·HoleInOne 사용자 해시>/login.dat`를 재사용하며, 세이브 업로드의 켜짐/꺼짐 설정은 유지합니다.
+이 경로는 보유 게임 조회·클라우드 로그인과 동일한 새 Steam 연결을 사용합니다. 기존 세이브 연결 파일은 자동 이전하거나 서버에 올리지 않습니다.
+PC Steam 계정이 연결 계정과 다르면 로컬 전환을 보류합니다. 아래 별도 QR 연결 절차는 기존 개발 모드에만 남아 있습니다.
+
+## 기존 개발 모드 사용
 
 `build/Build-HoleInOne.ps1`로 빌드하면 `Tools/SteamCloud/HoleInOne.SteamCloud.exe`가 함께 배포됨. 설정 → Steam 세이브 계정 연결에서 Steam 모바일 앱으로 QR을 스캔함. PC의 Steam 로그인 계정과 같은 계정만 저장함. 이후 `전환할 때 Steam Cloud에도 세이브 업로드 (시험 기능)`을 켬. 로그인은 전환 전에 수행하며 전환 도중 QR이나 별도 확인창을 표시하지 않음. 기본은 비활성화임.
 

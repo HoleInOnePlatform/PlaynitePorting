@@ -35,7 +35,7 @@ namespace Playnite.DesktopApp.HoleInOne
                             await backend.LogoutAsync(CancellationToken.None);
                         LauncherLogin.Forget(); Close();
                         if (!LauncherLogin.EnsureSignedIn(settings)) Application.Current.Shutdown();
-                        else CloudPreparation.Begin();
+                        else { await SteamSetup.OnStartupAsync(); CloudPreparation.Begin(); }
                     }
                     catch (Exception)
                     {
@@ -45,8 +45,25 @@ namespace Playnite.DesktopApp.HoleInOne
                 };
             }
             AddDevelopmentServerSettings(panel);
-            AddStoreSettings(panel, "Steam 연동 설정", BuiltinStoreLibrary.SteamId);
-            AddSteamCloudSettings(panel);
+            if (LauncherSettings.Load().RequireLogin)
+            {
+                var steam = new Button { Content="Steam 연결 관리", Margin=new Thickness(0,6,0,6) };
+                steam.Click+=(sender,args)=>new SteamSetupWindow { Owner=this }.ShowDialog(); panel.Children.Add(steam);
+                var saves=new CheckBox { Content="전환할 때 Steam Cloud에도 세이브 업로드", IsChecked=LauncherSettings.Load().SteamCloudUploadEnabled, Margin=new Thickness(0,6,0,12) };
+                panel.Children.Add(saves);
+                RoutedEventHandler changed=(sender,args)=>{
+                    var settings=LauncherSettings.Load();
+                    if(InstantPlayCoordinator.ActiveStreamCount!=0 || (saves.IsChecked==true && !SteamLinkContext.HasLocalLogin))
+                    { MessageBox.Show("클라우드 이용을 종료하고 이 PC에서 Steam을 연결한 후 변경해 주세요.",Title); saves.IsChecked=settings.SteamCloudUploadEnabled; return; }
+                    settings.SteamCloudUploadEnabled=saves.IsChecked==true; settings.Save();
+                };
+                saves.Checked+=changed; saves.Unchecked+=changed;
+            }
+            else
+            {
+                AddStoreSettings(panel, "Steam 연동 설정", BuiltinStoreLibrary.SteamId);
+                AddSteamCloudSettings(panel);
+            }
             AddStoreSettings(panel, "Epic 연동 설정", BuiltinStoreLibrary.EpicId);
             panel.Children.Add(new TextBlock
             {
