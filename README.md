@@ -1,3 +1,4 @@
+> **HoleInOne 포팅 프로젝트:** 현재 개발 상태·빌드·실행 방법은 [HOLEINONE.md](HOLEINONE.md), 구현 범위는 [TASKS.md](TASKS.md)를 참조함. 아래는 원본 Playnite 안내임.
 
 # <img src="https://playnite.link/applogo.png" width="32">  Playnite [![Crowdin](https://badges.crowdin.net/playnite/localized.svg)](https://crowdin.com/project/playnite)
 An open source video game library manager and launcher with support for 3rd party libraries like Steam, Epic, GOG, EA App, Battle.net and [others](https://playnite.link/addons.html). Includes game emulation support, providing one unified interface for your games.

@@ -920,6 +920,11 @@ namespace Playnite.DesktopApp.ViewModels
 
         public void CheckForUpdate()
         {
+            if (!Playnite.Services.ServicesClient.IsEnabled)
+            {
+                return;
+            }
+
             var updater = new Updater(App);
             var appUpdateAvailable = false;
             var addonUpdates = new List<AddonUpdate>();
@@ -1244,8 +1249,6 @@ namespace Playnite.DesktopApp.ViewModels
             // Random game
             yield return new SearchItem(LOC.MenuSelectRandomGame, LOC.Open, () => SelectRandomGameCommand.Execute(null), "DiceIcon");
 
-            // Addons window
-            yield return new SearchItem(LOC.MenuAddons, LOC.Open, () => OpenAddonsCommand.Execute(null), "AddonsIcon");
 
             // Open client
             foreach (var tool in ThirdPartyTools)
@@ -1253,8 +1256,6 @@ namespace Playnite.DesktopApp.ViewModels
                 yield return createItem(LOC.MenuOpenClient, tool.Name, ThirdPartyToolOpenCommand, tool, tool.Icon);
             }
 
-            // Check for updates
-            yield return new SearchItem(LOC.CheckForUpdates, LOC.Activate, () => CheckForUpdateCommand.Execute(null));
 
             // Help
             yield return new SearchItem(LOC.MenuAbout, LOC.Open, () => OpenAboutCommand.Execute(null), "AboutPlayniteIcon");

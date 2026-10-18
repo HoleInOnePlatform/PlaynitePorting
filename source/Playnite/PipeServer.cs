@@ -91,7 +91,7 @@ namespace Playnite
         public void StartServer(IPipeService service)
         {
             serviceHost = new ServiceHost(service, new Uri[] { new Uri(endpoint) });
-            serviceHost.AddServiceEndpoint(typeof(IPipeService), new NetNamedPipeBinding(), "PlayniteService");
+            serviceHost.AddServiceEndpoint(typeof(IPipeService), new NetNamedPipeBinding(), ApplicationIdentity.PipeService);
             serviceHost.Open();
         }
 
@@ -104,7 +104,7 @@ namespace Playnite
     public class PipeClient : ClientBase<IPipeService>
     {
         public PipeClient(string endpoint)
-            : base(new ServiceEndpoint(ContractDescription.GetContract(typeof(IPipeService)), new NetNamedPipeBinding(), new EndpointAddress(endpoint.TrimEnd('/') + @"/PlayniteService")))
+            : base(new ServiceEndpoint(ContractDescription.GetContract(typeof(IPipeService)), new NetNamedPipeBinding(), new EndpointAddress(endpoint.TrimEnd('/') + "/" + ApplicationIdentity.PipeService)))
         {
         }
 

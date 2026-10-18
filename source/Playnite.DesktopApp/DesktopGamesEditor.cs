@@ -35,6 +35,17 @@ namespace Playnite.DesktopApp
         {
         }
 
+        private HoleInOne.InstantPlayCoordinator instantPlay;
+        public override void StartContextAction(Game game) => PlayGame(game, true);
+        public override void PlayGame(Game game, bool launchedFromUI, int actionIndex = -1)
+        {
+            if (instantPlay == null) instantPlay = new HoleInOne.InstantPlayCoordinator(this,
+                (local) => base.PlayGame(local, true));
+            if (instantPlay.Focus(game.Id)) return;
+            if (game.IsInstalled) { base.PlayGame(game, launchedFromUI, actionIndex); return; }
+            instantPlay.Start(game);
+        }
+
         public bool? SetGameCategories(Game game)
         {
             var model = new CategoryConfigViewModel(new CategoryConfigWindowFactory(), Database, game);

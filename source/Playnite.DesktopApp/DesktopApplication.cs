@@ -200,18 +200,7 @@ namespace Playnite.DesktopApp
 
         private async void OpenMainViewAsync(bool isFirstStart)
         {
-            if (!isFirstStart)
-            {
-                Extensions.LoadPlugins(
-                    AppSettings.DisabledPlugins,
-                    CmdLine.SafeStartup,
-                    AppSettings.DevelExtenions.Where(a => a.Selected == true).Select(a => a.Item).ToList());
-            }
-
-            Extensions.LoadScripts(
-                AppSettings.DisabledPlugins,
-                CmdLine.SafeStartup,
-                AppSettings.DevelExtenions.Where(a => a.Selected == true).Select(a => a.Item).ToList());
+            Extensions.LoadBuiltinLibraries();
             OnExtensionsLoaded();
 
             try
@@ -225,6 +214,20 @@ namespace Playnite.DesktopApp
 
             MainModel.OpenView();
             CurrentNative.MainWindow = MainModel.Window.Window;
+
+            try
+            {
+                if (!HoleInOne.LauncherLogin.EnsureSignedIn(Playnite.HoleInOne.LauncherSettings.Load()))
+                { CurrentNative.Shutdown(); return; }
+            }
+            catch (Exception)
+            {
+                System.Windows.MessageBox.Show("서비스 연결 설정을 확인할 수 없습니다. 앱을 다시 설치해 주세요.", "HoleInOne");
+                CurrentNative.Shutdown(); return;
+            }
+
+            HoleInOne.CloudPreparation.Begin();
+            CurrentNative.Exit += (sender, args) => HoleInOne.CloudPreparation.Shutdown();
 
             if (isFirstStart)
             {
@@ -267,17 +270,15 @@ namespace Playnite.DesktopApp
                 Database.SetDatabasePath(AppSettings.DatabasePath);
                 Database.OpenDatabase();
 
-                var wizardWindow = new FirstTimeStartupWindowFactory();
-                var wizardModel = new FirstTimeStartupViewModel(
-                    wizardWindow,
-                    Dialogs,
-                    new ResourceProvider(),
-                    Extensions,
-                    ServicesClient);
-                if (wizardModel.OpenView() == true)
+                if (Playnite.Services.ServicesClient.IsEnabled)
                 {
-                    var settings = wizardModel.Settings;
-                    AppSettings.DisabledPlugins = settings.DisabledPlugins;
+                    var wizardWindow = new FirstTimeStartupWindowFactory();
+                    var wizardModel = new FirstTimeStartupViewModel(
+                        wizardWindow, Dialogs, new ResourceProvider(), Extensions, ServicesClient);
+                    if (wizardModel.OpenView() == true)
+                    {
+                        AppSettings.DisabledPlugins = wizardModel.Settings.DisabledPlugins;
+                    }
                 }
 
                 AppSettings.AutoBackupEnabled = true;

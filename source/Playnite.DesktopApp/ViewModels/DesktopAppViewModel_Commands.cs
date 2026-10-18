@@ -261,7 +261,7 @@ namespace Playnite.DesktopApp.ViewModels
             CheckForUpdateCommand = new RelayCommand<object>((a) =>
             {
                 CheckForUpdate();
-            });
+            }, (a) => false);
 
             OpenDbFieldsManagerCommand = new RelayCommand<object>((a) =>
             {
@@ -276,12 +276,7 @@ namespace Playnite.DesktopApp.ViewModels
 
             OpenLibraryIntegrationsConfigCommand = new RelayCommand<object>((a) =>
             {
-                OpenIntegrationSettings(
-                    new LibraryIntegrationsViewModel(
-                        new LibraryIntegrationsWindowFactory(),
-                        Dialogs,
-                        Resources,
-                        Extensions));
+                new HoleInOne.LauncherSettingsWindow { Owner = System.Windows.Application.Current.MainWindow }.ShowDialog();
             });
 
             UpdateLibraryCommand = new RelayCommand<LibraryPlugin>((a) =>
@@ -309,8 +304,7 @@ namespace Playnite.DesktopApp.ViewModels
 
             ReloadScriptsCommand = new RelayCommand<object>((f) =>
             {
-                Extensions.LoadScripts(AppSettings.DisabledPlugins, App.CmdLine.SafeStartup, AppSettings.DevelExtenions.Where(a => a.Selected == true).Select(a => a.Item).ToList());
-            }, new KeyGesture(Key.F12));
+            }, (f) => false, new KeyGesture(Key.F12));
 
             ShowGameSideBarCommand = new RelayCommand<GamesCollectionViewEntry>((f) =>
             {
@@ -333,15 +327,8 @@ namespace Playnite.DesktopApp.ViewModels
 
             OpenAddonsCommand = new RelayCommand<object>((a) =>
             {
-                new AddonsViewModel(
-                    new AddonsWindowFactory(),
-                    Dialogs,
-                    Resources,
-                    App.ServicesClient,
-                    Extensions,
-                    AppSettings,
-                    App).OpenView();
-            }, new KeyGesture(Key.F9));
+                Dialogs.ShowMessage("홀인원에서는 온라인 애드온을 지원하지 않음.", "HoleInOne");
+            }, (a) => false, new KeyGesture(Key.F9));
 
             StartGameCommand = new RelayCommand<Game>((game) =>
             {

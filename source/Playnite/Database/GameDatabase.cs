@@ -439,7 +439,7 @@ namespace Playnite.Database
             }
             else
             {
-                return @"%AppData%\Playnite\library";
+                return @"%AppData%\HoleInOne\library";
             }
         }
 

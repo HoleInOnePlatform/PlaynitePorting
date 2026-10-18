@@ -180,6 +180,15 @@ namespace Playnite.SDK.Plugins
         public abstract void Uninstall(UninstallActionArgs args);
 
         /// <summary>
+        /// Start uninstallation asynchronously. Existing controllers retain their calling thread.
+        /// </summary>
+        public virtual Task UninstallAsync(UninstallActionArgs args)
+        {
+            Uninstall(args);
+            return Task.CompletedTask;
+        }
+
+        /// <summary>
         /// Invoke to signal that uninstallation completed.
         /// </summary>
         /// <param name="args"></param>

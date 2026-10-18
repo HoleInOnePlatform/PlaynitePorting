@@ -2,7 +2,10 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <AssemblyName>Playnite.BrowserProcess</AssemblyName>
+    <AssemblyName>HoleInOne.BrowserProcess</AssemblyName>
+    <RootNamespace>Playnite.BrowserProcess</RootNamespace>
+    <AssemblyTitle>HoleInOne Browser Process</AssemblyTitle>
+    <Product>HoleInOne</Product>
     <TargetFramework>net462</TargetFramework>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>

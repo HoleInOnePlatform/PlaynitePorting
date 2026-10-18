@@ -15,6 +15,16 @@ namespace Playnite.Services
 {
     public class ServicesClient : BaseServicesClient
     {
+        public static bool IsEnabled => false;
+
+        private sealed class DisabledServicesHandler : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, System.Threading.CancellationToken cancellationToken)
+            {
+                throw new NotSupportedException("홀인원에서는 Playnite 온라인 서비스를 사용하지 않음.");
+            }
+        }
+
         public class RecommendedAddons
         {
             public Dictionary<string, string> Libraries { get; set; }
@@ -29,6 +39,8 @@ namespace Playnite.Services
 
         public ServicesClient(string endpoint) : base(endpoint, Updater.CurrentVersion)
         {
+            HttpClient.Dispose();
+            HttpClient = new HttpClient(new DisabledServicesHandler());
         }
 
         public List<string> GetPatrons()

@@ -236,6 +236,13 @@ namespace Playnite.DesktopApp.Controls.Views
                     converter: new BooleanToVisibilityConverter());
             }
 
+            var installButton = Template.FindName("PART_ButtonInstallAction", this) as Button;
+            if (installButton != null)
+            {
+                BindingTools.SetBinding(installButton, Button.CommandProperty, nameof(GameDetailsViewModel.InstallCommand));
+                BindingTools.SetBinding(installButton, Button.VisibilityProperty, nameof(GameDetailsViewModel.IsInstallAvailable), converter: new BooleanToVisibilityConverter());
+            }
+
             ButtonContextAction = Template.FindName("PART_ButtonContextAction", this) as Button;
             if (ButtonContextAction != null)
             {

@@ -1,7 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <AssemblyTitle>Playnite Desktop Application</AssemblyTitle>
+    <AssemblyName>HoleInOne</AssemblyName>
+    <RootNamespace>Playnite.DesktopApp</RootNamespace>
+    <Product>HoleInOne</Product>
+    <AssemblyTitle>HoleInOne Desktop Application</AssemblyTitle>
     <Copyright>Copyright © Josef Nemec 2026</Copyright>
     <TargetFramework>net462</TargetFramework>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
@@ -23,6 +26,8 @@
   <ItemGroup>
     <ProjectReference Include="..\PlayniteSDK\Playnite.SDK.csproj" />
     <ProjectReference Include="..\Playnite\Playnite.csproj" />
+    <ProjectReference Include="..\BuiltinLibraries\SteamLibrary\SteamLibrary.csproj" />
+    <ProjectReference Include="..\BuiltinLibraries\EpicLibrary\EpicLibrary.csproj" />
   </ItemGroup>
 
   <ItemGroup>

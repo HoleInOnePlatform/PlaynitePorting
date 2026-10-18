@@ -33,8 +33,12 @@ namespace Playnite
                 settings.CefCommandLineArgs.Remove("disable-gpu-compositing");
             }
 
-            settings.CefCommandLineArgs.Add("disable-gpu", "1");
-            settings.CefCommandLineArgs.Add("disable-gpu-compositing", "1");
+            // Cloud streaming requires Chromium's video acceleration where available.
+            if (PlayniteApplication.Current.CmdLine.ForceSoftwareRender || PlayniteApplication.Current.AppSettings.DisableHwAcceleration)
+            {
+                settings.CefCommandLineArgs.Add("disable-gpu", "1");
+                settings.CefCommandLineArgs.Add("disable-gpu-compositing", "1");
+            }
 
             // This is needed since Chromium 138 and up automatically de-elevates elevated instances.
             // This however breaks webviews in case Playnite is started as admin.
@@ -42,12 +46,15 @@ namespace Playnite
             settings.CefCommandLineArgs.Add("do-not-de-elevate");
 
             settings.CachePath = PlaynitePaths.BrowserCachePath;
+            settings.RootCachePath = PlaynitePaths.BrowserCachePath;
             settings.PersistSessionCookies = true;
             settings.LogFile = Path.Combine(PlaynitePaths.ConfigRootPath, "cef.log");
             settings.LogSeverity =  traceLogsEnabled ? LogSeverity.Verbose : LogSeverity.Info;
             settings.BrowserSubprocessPath = PlaynitePaths.BrowserProcessExecutablePath;
 
-            IsInitialized = Cef.Initialize(settings, performDependencyCheck: false);
+            logger.Info("Initializing embedded browser.");
+            IsInitialized = Cef.Initialize(settings, performDependencyCheck: true);
+            logger.Info("Embedded browser initialization result: " + IsInitialized);
             if (!IsInitialized)
                 logger.Error($"CEF failed to initialize: {Cef.GetExitCode()}");
         }

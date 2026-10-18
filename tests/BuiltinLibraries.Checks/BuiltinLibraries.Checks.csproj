@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net462</TargetFramework>
+    <UseWpf>true</UseWpf>
+    <PlatformTarget>x86</PlatformTarget>
+    <LangVersion>12</LangVersion>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../source/BuiltinLibraries/SteamLibrary/SteamLibrary.csproj" />
+    <ProjectReference Include="../../source/BuiltinLibraries/EpicLibrary/EpicLibrary.csproj" />
+    <PackageReference Include="Moq" Version="4.10.1" />
+  </ItemGroup>
+</Project>

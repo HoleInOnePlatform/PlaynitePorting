@@ -387,7 +387,7 @@ namespace Playnite.DesktopApp.Controls
                 }
                 else
                 {
-                    DesktopApplication.Current.GamesEditor.InstallGame(game);
+                    DesktopApplication.Current.GamesEditor.PlayGame(game, true);
                 }
             }
         }

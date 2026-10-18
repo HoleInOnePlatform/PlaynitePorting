@@ -1,7 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <AssemblyTitle>Playnite Fullscreen Application</AssemblyTitle>
+    <AssemblyName>HoleInOne.Fullscreen</AssemblyName>
+    <RootNamespace>Playnite.FullscreenApp</RootNamespace>
+    <Product>HoleInOne</Product>
+    <AssemblyTitle>HoleInOne Fullscreen Application</AssemblyTitle>
     <Copyright>Copyright © Josef Nemec 2026</Copyright>
     <TargetFramework>net462</TargetFramework>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>

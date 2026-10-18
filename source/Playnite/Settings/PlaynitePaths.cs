@@ -74,19 +74,19 @@ namespace Playnite
             IsPortable = !File.Exists(UninstallerPath);
 
             LocalizationsPath = Path.Combine(ProgramPath, LocalizationsDirName);
-            DesktopExecutablePath = Path.Combine(ProgramPath, "Playnite.DesktopApp.exe");
-            FullscreenExecutablePath = Path.Combine(ProgramPath, "Playnite.FullscreenApp.exe");
-            BrowserProcessExecutablePath = Path.Combine(ProgramPath, "Playnite.BrowserProcess.exe");
+            DesktopExecutablePath = Path.Combine(ProgramPath, ApplicationIdentity.DesktopProcessName + ".exe");
+            FullscreenExecutablePath = Path.Combine(ProgramPath, ApplicationIdentity.FullscreenProcessName + ".exe");
+            BrowserProcessExecutablePath = Path.Combine(ProgramPath, ApplicationIdentity.BrowserProcessName + ".exe");
             PlayniteAssemblyPath = Path.Combine(ProgramPath, "Playnite.dll");
             PlayniteSDKAssemblyPath = Path.Combine(ProgramPath, "Playnite.SDK.dll");
             ExtensionsProgramPath = Path.Combine(ProgramPath, ExtensionsDirName);
             LocalizationsStatusPath = Path.Combine(LocalizationsPath, "locstatus.json");
             ThemesProgramPath = Path.Combine(ProgramPath, ThemesDirName);
             EmulationDatabasePath = Path.Combine(ProgramPath, "Emulation", "Database");
-            TempPath = Path.Combine(Path.GetTempPath(), "Playnite");
+            TempPath = Path.Combine(Path.GetTempPath(), ApplicationIdentity.Name);
 
             // We need to always initialize some default set for environments like Blend or Rider
-            UpdateUserDataDir(IsPortable ? ProgramPath : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Playnite"));
+            UpdateUserDataDir(IsPortable ? ProgramPath : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ApplicationIdentity.Name));
         }
 
         public static void UpdateUserDataDir(string dir)

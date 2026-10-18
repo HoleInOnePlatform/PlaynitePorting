@@ -35,7 +35,7 @@ namespace Playnite
     public abstract class PlayniteApplication : ObservableObject, IPlayniteApplication
     {
         private ILogger logger = LogManager.GetLogger();
-        private const string instanceMuxet = "PlayniteInstaceMutex";
+        private const string instanceMuxet = ApplicationIdentity.InstanceMutex;
         private Mutex appMutex;
         public bool ResourcesReleased { get; private set; } = false;
         private PipeService pipeService;
@@ -132,7 +132,7 @@ namespace Playnite
             if (FileSystem.FileExists(PlaynitePaths.SafeStartupFlagFile))
             {
                 if (MessageBox.Show(
-                    "Playnite closed unexpectedly while starting. This is usually caused by 3rd party theme or extension. Do you want to start in safe mode with all 3rd party add-ons disabled?",
+                    "HoleInOne closed unexpectedly while starting. This is usually caused by 3rd party theme or extension. Do you want to start in safe mode with all 3rd party add-ons disabled?",
                     "Startup Error",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning) == MessageBoxResult.Yes)
@@ -148,6 +148,7 @@ namespace Playnite
 
             // All code above has to be called before we create instance of WPF app,
             // because MessageBox forces WPF to initialize and fire startup app events.
+            SystemIntegration.SetApplicationIdentity();
             CurrentNative = appInitializer();
             CurrentNative.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             SyncContext = new DispatcherSynchronizationContext(CurrentNative.Dispatcher);
@@ -162,7 +163,7 @@ namespace Playnite
                         .WaitAndRetry(3, a => TimeSpan.FromSeconds(3))
                         .Execute(() => pipeService = new PipeService());
                 pipeService.CommandExecuted += PipeService_CommandExecuted;
-                pipeServer = new PipeServer(PlayniteSettings.GetAppConfigValue("PipeEndpoint"));
+                pipeServer = new PipeServer(ApplicationIdentity.PipeEndpoint);
                 pipeServer.StartServer(pipeService);
             }
             catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
@@ -973,7 +974,7 @@ namespace Playnite
                         .WaitAndRetry(3, a => TimeSpan.FromSeconds(3))
                         .Execute(() =>
                         {
-                            var client = new PipeClient(PlayniteSettings.GetAppConfigValue("PipeEndpoint"));
+                            var client = new PipeClient(ApplicationIdentity.PipeEndpoint);
                             if (!CmdLine.Start.IsNullOrEmpty())
                             {
                                 client.InvokeCommand(CmdlineCommand.Start, [CmdLine.Start, CmdLine.ActionIndex?.ToString()]);
@@ -1024,7 +1025,7 @@ namespace Playnite
                 catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
                 {
                     MessageBox.Show(
-                        "Playnite failed to start. Please close all other instances and try again.",
+                        "HoleInOne failed to start. Please close all other instances and try again.",
                         "Startup Error");
                     logger.Error(exc, "Can't process communication with other instances.");
                 }
@@ -1120,7 +1121,7 @@ namespace Playnite
 
         public void ProcessArguments()
         {
-            UriHandler.Handlers.Add("playnite", ProcessUriRequest);
+            UriHandler.Handlers.Add(ApplicationIdentity.UriScheme, ProcessUriRequest);
             if (!CmdLine.Start.IsNullOrEmpty())
             {
                 PipeService_CommandExecuted(this, new CommandExecutedEventArgs(CmdlineCommand.Start,
@@ -1454,7 +1455,7 @@ namespace Playnite
 
         public async Task StartUpdateCheckerAsync()
         {
-            if (PlayniteEnvironment.InOfflineMode)
+            if (!Services.ServicesClient.IsEnabled || PlayniteEnvironment.InOfflineMode)
             {
                 return;
             }
@@ -1533,6 +1534,12 @@ namespace Playnite
 
         public void InstallOnlineAddon(string addonId)
         {
+            if (!Services.ServicesClient.IsEnabled)
+            {
+                Dialogs.ShowMessage("홀인원에서는 온라인 애드온 설치를 지원하지 않음.", "HoleInOne");
+                return;
+            }
+
             try
             {
                 var addon = ServicesClient.GetAddon(addonId);
@@ -1744,7 +1751,7 @@ namespace Playnite
 
         public static bool IsProcessPlayniteProcess(Process process)
         {
-            return process.ProcessName.StartsWith("Playnite.DesktopApp") || process.ProcessName.StartsWith("Playnite.FullscreenApp");
+            return ApplicationIdentity.IsApplicationProcess(process.ProcessName);
         }
 
         public abstract PlayniteAPI GetApiInstance(ExtensionManifest pluginOwner);

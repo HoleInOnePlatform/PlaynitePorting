@@ -6,7 +6,7 @@
         xmlns:controls="clr-namespace:Playnite.Controls;assembly=Playnite"
         xmlns:pctrls="clr-namespace:Playnite.DesktopApp.Controls"
         xmlns:pmrk="clr-namespace:Playnite.DesktopApp.Markup"
-        xmlns:dvm="clr-namespace:Playnite.DesktopApp.ViewModels;assembly=Playnite.DesktopApp"
+        xmlns:dvm="clr-namespace:Playnite.DesktopApp.ViewModels;assembly=HoleInOne"
         mc:Ignorable="d"
         Style="{DynamicResource StandardWindowStyle}"
         Title="{DynamicResource LOCMedataDiffWindowTitle}" 

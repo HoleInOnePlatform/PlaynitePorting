@@ -8,6 +8,7 @@
     xmlns:asmv3="urn:schemas-microsoft-com:asm.v3"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 
+  <assemblyIdentity version="1.0.0.0" name="HoleInOne.BrowserProcess"/>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">

@@ -80,6 +80,7 @@ namespace Playnite
         private readonly ConcurrentDictionary<Guid, IPowerShellRuntime> scriptRuntimes = new ConcurrentDictionary<Guid, IPowerShellRuntime>();
         private readonly IActionSelector actionSelector;
         private bool wasHdrEnabled;
+        private bool disposed;
 
         public PlayniteApplication Application;
 
@@ -156,6 +157,7 @@ namespace Playnite
 
         public void Dispose()
         {
+            disposed = true;
             foreach (var controller in controllers.PlayControllers)
             {
                 UpdateGameState(controller.Game.Id, null, false, false, false, false);
@@ -174,7 +176,7 @@ namespace Playnite
             controllers.Stopped -= Controllers_Stopped;
         }
 
-        public void StartContextAction(Game game)
+        public virtual void StartContextAction(Game game)
         {
             if (game.IsInstalled)
             {
@@ -186,7 +188,7 @@ namespace Playnite
             }
         }
 
-        public void PlayGame(Game game, bool launchedFromUI, int actionIndex = -1)
+        public virtual void PlayGame(Game game, bool launchedFromUI, int actionIndex = -1)
         {
             if (!game.IsInstalled)
             {
@@ -1055,7 +1057,7 @@ namespace Playnite
                 }
 
                 var args = new CmdLineOptions() { Start = game.Id.ToString() }.ToString();
-                Programs.CreateUrlShortcut($"playnite://playnite/start/{game.Id}", icon, path);
+                Programs.CreateUrlShortcut($"holeinone://holeinone/start/{game.Id}", icon, path);
             }
             catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
             {
@@ -1155,8 +1157,9 @@ namespace Playnite
             }
         }
 
-        public void UnInstallGame(Game game)
+        public async void UnInstallGame(Game game)
         {
+            if (game.IsUninstalling) return;
             if (game.IsRunning || game.IsLaunching)
             {
                 Dialogs.ShowMessage(LOC.GameUninstallRunningError, LOC.GameError,
@@ -1193,7 +1196,7 @@ namespace Playnite
                 controllers.RemoveInstallController(game.Id);
                 controllers.AddController(controller);
                 UpdateGameState(game.Id, null, null, null, true, null);
-                controller.Uninstall(new UninstallActionArgs());
+                await controller.UninstallAsync(new UninstallActionArgs());
             }
             catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
             {
@@ -1560,14 +1563,13 @@ namespace Playnite
             }
         }
 
-        private void Controllers_Installed(object sender, GameInstalledEventArgs args)
+        private async void Controllers_Installed(object sender, GameInstalledEventArgs args)
         {
             var game = args.Source.Game;
             logger.Info($"Game {game.Name} installed.");
 
             var dbGame = Database.Games.Get(game.Id);
-            dbGame.IsInstalling = false;
-            dbGame.IsInstalled = true;
+            if (dbGame == null) { controllers.RemoveController(args.Source); return; }
             if (args.InstalledInfo != null)
             {
                 dbGame.InstallDirectory = args.InstalledInfo.InstallDirectory;
@@ -1577,17 +1579,31 @@ namespace Playnite
                 }
             }
 
-            try
-            {
-                UpdateGameSize(dbGame, false, false, false);
-            }
-            catch
-            {
-                // Already logged
-            }
-
+            // Publish the path and installed state before clearing IsInstalling.
+            // Property notifications can yield to the UI download observer between assignments.
+            dbGame.IsInstalled = true;
+            dbGame.IsInstalling = false;
             Database.Games.Update(dbGame);
             controllers.RemoveController(args.Source);
+
+            // Scanning a large installation on the UI thread leaves the old "installing"
+            // label painted for the entire scan and also delays the webview handoff prompt.
+            try
+            {
+                var snapshot = dbGame.GetCopy();
+                var size = await Task.Run(() => CalculateGameSize(snapshot, false));
+                if (disposed || size == null) return;
+                var current = Database.Games.Get(game.Id);
+                if (current == null || !current.IsInstalled || current.IsInstalling || current.IsUninstalling ||
+                    !string.Equals(current.InstallDirectory, snapshot.InstallDirectory, StringComparison.OrdinalIgnoreCase)) return;
+                current.InstallSize = size;
+                current.LastSizeScanDate = DateTime.Now;
+                Database.Games.Update(current);
+            }
+            catch (Exception error)
+            {
+                logger.Warn(error, "Installation completed, but the background size scan failed.");
+            }
         }
 
         private void Controllers_InstallationCancelled(object sender, GameInstallationCancelledEventArgs args)
@@ -1596,8 +1612,11 @@ namespace Playnite
             logger.Info($"Game {game.Name} installation cancelled.");
 
             var dbGame = Database.Games.Get(game.Id);
-            dbGame.IsInstalling = false;
-            Database.Games.Update(dbGame);
+            if (dbGame != null)
+            {
+                dbGame.IsInstalling = false;
+                Database.Games.Update(dbGame);
+            }
             controllers.RemoveController(args.Source);
         }
 
