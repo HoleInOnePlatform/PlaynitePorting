@@ -94,10 +94,11 @@ namespace Playnite.DesktopApp.HoleInOne
                     updated.MaximumStorageGiB = capacity;
                     updated.ValidateStorage();
                     status.Text = "현재 사용량 확인 중…";
-                    var used = await System.Threading.Tasks.Task.Run(() => StorageManagement.Used(updated));
+                    var installedGames = DesktopApplication.Current.Database.Games.ToList();
+                    var used = await System.Threading.Tasks.Task.Run(() => StorageManagement.Used(updated, installedGames));
                     if (used > checked((ulong)capacity * 1024 * 1024 * 1024) &&
-                        MessageBox.Show(this, $"현재 사용량({used / (1024d * 1024 * 1024):N2} GiB)이 설정할 최대 용량({capacity:N0} GiB)보다 큽니다.\n\n설정을 저장해도 지금 게임을 삭제하지 않습니다. 다음 설치 시 공간 확보가 필요하면 보호하지 않은 기존 게임을 추가 확인 없이 자동 제거합니다.\n\n이 용량으로 저장하시겠습니까?",
-                            "저장공간 한도 경고", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+                        new Playnite.DesktopApp.Windows.MessageBoxWindow().Show(this, $"현재 사용량({used / (1024d * 1024 * 1024):N2} GiB)이 설정할 최대 용량({capacity:N0} GiB)보다 큽니다.\n\n설정을 저장해도 지금 게임을 삭제하지 않습니다. 다음 설치 시 공간 확보가 필요하면 보호하지 않은 기존 게임을 추가 확인 없이 자동 제거합니다.\n\n이 용량으로 저장하시겠습니까?",
+                            "저장공간 한도 경고", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No, MessageBoxOptions.None) != MessageBoxResult.Yes)
                     { status.Text = "설정 저장을 취소했습니다. 기존 한도를 유지합니다."; return; }
                     if (StorageManagement.IsBusy) throw new InvalidOperationException("게임 설치가 시작되어 설정을 저장하지 않았습니다. 설치 완료 후 다시 시도해 주세요.");
                     if (!IsVisible) return;
@@ -114,8 +115,9 @@ namespace Playnite.DesktopApp.HoleInOne
                 try
                 {
                     var current = LauncherSettings.Load();
-                    var used = await System.Threading.Tasks.Task.Run(() => StorageManagement.Used(current));
-                    status.Text = $"현재 사용량: {used / (1024d * 1024 * 1024):N2} GiB / 최대 {current.MaximumStorageGiB:N0} GiB";
+                    var installedGames = DesktopApplication.Current.Database.Games.ToList();
+                    var used = await System.Threading.Tasks.Task.Run(() => StorageManagement.Used(current, installedGames));
+                    status.Text = $"설치된 게임 기준 사용량: {used / (1024d * 1024 * 1024):N2} GiB / 최대 {current.MaximumStorageGiB:N0} GiB\n설치 정보 기준이며 모드·잔여 파일은 포함되지 않을 수 있습니다.";
                 }
                 catch (Exception error) { status.Text = "사용량 확인 실패: " + error.Message; }
                 finally { refresh.IsEnabled = true; }

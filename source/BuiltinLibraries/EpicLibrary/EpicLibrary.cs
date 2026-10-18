@@ -91,6 +91,7 @@ namespace EpicLibrary
                     GameId = manifest.AppName,
                     Name = gameName,
                     InstallDirectory = installLocation,
+                    InstallSize = ulong.TryParse(manifest.InstallSize, out var installedSize) ? (ulong?)installedSize : null,
                     IsInstalled = true,
                     Platforms = new HashSet<MetadataProperty> { new MetadataSpecProperty("pc_windows") }
                 };
