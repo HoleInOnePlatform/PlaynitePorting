@@ -13,7 +13,7 @@ internal static class Program
     }
 }
 
-internal sealed class ProbeWindow : Form
+internal sealed partial class ProbeWindow : Form
 {
     private readonly Label state = new() { AutoSize = true, MaximumSize = new Size(670, 0), Text = "신규 인증을 선택하세요. 기존 Steam 인증 파일은 읽지 않습니다." };
     private readonly PictureBox qr = new() { Size = new Size(280, 280), SizeMode = PictureBoxSizeMode.Zoom };
@@ -30,6 +30,7 @@ internal sealed class ProbeWindow : Form
 
     public ProbeWindow()
     {
+        if (cloud.Enabled) { SetupCloudUi(); return; }
         Text = "HoleInOne · Steam 로그인 호환성 검증";
         ClientSize = new Size(740, 720); MinimumSize = new Size(720, 740);
         Font = new Font("Malgun Gothic", 10);
@@ -79,13 +80,14 @@ internal sealed class ProbeWindow : Form
                     _ => "PROBE_FAILED"
                 };
                 // Never show raw Steam/network/JSON exceptions: they may contain credentials.
-                state.Text = Explain(code);
+                state.Text = cloud.Enabled ? "Result: " + code + ". No credentials are included in the report." : Explain(code);
                 evidence.Add(new { operation = text, result = code, at = DateTimeOffset.UtcNow });
             }
             finally {
                 password.Clear(); qr.Image?.Dispose(); qr.Image = null;
                 running.Dispose(); running = null; cancel.Enabled = false;
                 foreach (var item in actions) item.Enabled = true;
+                if (cloud.Enabled) TryWriteCloudReport();
             }
         };
         actions.Add(button); return button;
@@ -155,16 +157,21 @@ internal sealed class ProbeWindow : Form
 
     private async Task TestNative()
     {
-        var value = credential ?? throw new ProbeFailure("AUTHENTICATE_FIRST");
         using var open = new OpenFileDialog { Filter = "Steam 실행 파일|steam.exe" };
         if (open.ShowDialog(this) != DialogResult.OK) return;
         if (MessageBox.Show(this, "이 시험은 선택한 Steam 폴더와 현재 Windows 사용자에게 로그인 자료를 생성하고 Steam을 실행합니다.\n\n로그인 이력이 없는 별도 테스트 환경입니까? 평소 사용하는 Steam에는 실행하지 마세요.",
             "테스트 환경 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        await RunNative(open.FileName);
+    }
+
+    private async Task RunNative(string steamExe)
+    {
+        var value = credential ?? throw new ProbeFailure("AUTHENTICATE_FIRST");
         nativeState = "running";
         try {
-            await NativeProbe.RunAsync(value, open.FileName, message => Ui(() => state.Text = message), running!.Token);
+            await NativeProbe.RunAsync(value, steamExe, message => Ui(() => state.Text = cloud.Enabled ? "Validating account and starting Steam. Do not log in manually. Please wait up to 180 seconds." : message), running!.Token);
             nativeState = "expected_account_process_detected";
-            state.Text = "예상 Steam 계정과 실행 프로세스를 확인했습니다. Steam 화면도 확인한 뒤 결과를 저장하세요. 게임 실행·GameLift 검증과는 별개입니다.";
+            state.Text = cloud.Enabled ? "Expected Steam account detected. Click Open Steam window, check the account and online state, then return here to confirm." : "예상 Steam 계정과 실행 프로세스를 확인했습니다. Steam 화면도 확인한 뒤 결과를 저장하세요. 게임 실행·GameLift 검증과는 별개입니다.";
             evidence.Add(new { operation = "native_login", result = nativeState, candidate = "dpapi-utf8-v1", transferSha256 = transferHash,
                 actualAccountMatches = true, at = DateTimeOffset.UtcNow });
         }
@@ -175,12 +182,15 @@ internal sealed class ProbeWindow : Form
     {
         using var save = new SaveFileDialog { Filter = "검증 결과|*.json", FileName = "steam-probe-result.json" };
         if (save.ShowDialog(this) != DialogResult.OK) return Task.CompletedTask;
-        var report = new { schema = 1, runId, probeVersion = "0.1.0-gate", platform = Environment.OSVersion.VersionString,
-            nativeState, productionReady = false, cloudVerified = false, observations = evidence };
-        File.WriteAllText(save.FileName, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(save.FileName, ReportJson());
         state.Text = "결과 JSON을 저장했습니다. 계정 이름·SteamID·비밀번호·토큰·파일 경로는 포함하지 않습니다.";
         return Task.CompletedTask;
     }
+
+    private string ReportJson() => JsonSerializer.Serialize(new { schema = 1, runId, probeVersion = "0.2.0-gamelift-gate",
+        platform = Environment.OSVersion.VersionString, mode = cloud.Enabled ? "gamelift-isolated-test" : "local",
+        nativeState, operatorConfirmedOnline, productionReady = false, cloudVerified = false, observations = evidence },
+        new JsonSerializerOptions { WriteIndented = true });
 
     private string? Input(string title, bool sensitive, CancellationToken ct)
     {
