@@ -27,6 +27,14 @@ namespace Playnite.DesktopApp.HoleInOne
             return true;
         }
 
+        private static string ActiveSteamId()
+        {
+            var value = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam\ActiveProcess", "ActiveUser", null);
+            var account = value is int signed ? unchecked((uint)signed) : value is uint unsigned ? unsigned : 0;
+            if (account == 0) throw new InvalidOperationException("Steam에 로그인한 뒤 다시 시도해 주세요.");
+            return (76561197960265728UL + account).ToString(CultureInfo.InvariantCulture);
+        }
+
         public async void Start(Game game)
         {
             if (Focus(game.Id)) return;
@@ -44,24 +52,16 @@ namespace Playnite.DesktopApp.HoleInOne
             PreparedSessionManager preparation = null;
             DownloadHandoffPrompt prompt = null;
             Game localGame = null;
-            SteamCloudBridge steamCloud = null;
-            Task steamPreparation = null;
             bool cloudLaunchAllowed = false;
             try
             {
                 var key = BuiltinStoreLibrary.GameKey(game);
                 var settings = LauncherSettings.Load();
                 if (!timing.Run("ensure_login", () => LauncherLogin.EnsureSignedIn(settings))) return;
-                if (settings.SteamCloudUploadEnabled && key.StartsWith("steam-", StringComparison.Ordinal) && uint.TryParse(key.Substring(6), out var steamAppId))
-                {
-                    // Capture the remote baseline before cloud gameplay, not after the export arrives.
-                    steamCloud = timing.Run("steam_worker_start", () => new SteamCloudBridge(timing.Id));
-                    steamPreparation = timing.RunAsync("steam_baseline", () => steamCloud.PrepareAsync(steamAppId, play.Closed.Token));
-                }
                 backend = new BackendConnection(settings.BackendUrl, LauncherLogin.TokenFor(settings));
                 preparation = CloudPreparation.Get(settings);
                 LogManager.GetLogger().Info("[HIO-PERF] link trace=" + timing.Id + " preparation=" + preparation.TimingId);
-                try { session = await timing.RunAsync("prepare_and_claim_session", () => preparation.PlayAsync(key, play.Closed.Token, steamPreparation)); }
+                try { session = await timing.RunAsync("prepare_and_claim_session", () => preparation.PlayAsync(key, play.Closed.Token)); }
                 catch (LoginRequiredException) when (settings.RequireLogin)
                 {
                     // A backend restart invalidates in-memory tokens. Reauthenticate before retrying creation.
@@ -72,7 +72,7 @@ namespace Playnite.DesktopApp.HoleInOne
                     backend = new BackendConnection(settings.BackendUrl, LauncherLogin.TokenFor(settings));
                     preparation = CloudPreparation.Get(settings);
                     LogManager.GetLogger().Info("[HIO-PERF] link trace=" + timing.Id + " preparation=" + preparation.TimingId);
-                    session = await timing.RunAsync("prepare_and_claim_session", () => preparation.PlayAsync(key, play.Closed.Token, steamPreparation));
+                    session = await timing.RunAsync("prepare_and_claim_session", () => preparation.PlayAsync(key, play.Closed.Token));
                 }
                 var receipts = new ExportReceipts(settings);
                 receipts.Start();
@@ -92,11 +92,9 @@ namespace Playnite.DesktopApp.HoleInOne
                     play.View.Open();
                     webviewTiming.Complete();
                 }
-                if (steamPreparation != null) await timing.RunAsync("remaining_baseline_wait", () => steamPreparation);
                 play.Closed.Token.ThrowIfCancellationRequested();
                 if (session.LaunchDeferred)
                 {
-                    steamCloud.VerifyAccount();
                     await timing.RunAsync("allow_game_launch", () => backend.AllowPreparedLaunchAsync(session.SessionId, play.Closed.Token));
                 }
                 cloudLaunchAllowed = true;
@@ -185,16 +183,15 @@ namespace Playnite.DesktopApp.HoleInOne
                                 !string.Equals(game.InstallDirectory, roots["install"], StringComparison.OrdinalIgnoreCase))
                                 throw new InvalidOperationException("로컬 게임 상태 또는 설치 위치가 변경됨. 전환 중단.");
                             prompt.SetBusy(true, "세이브를 검증하고 저장된 진행 상황을 준비하는 중입니다.");
-                            var restore = await ParallelPreparation.RunAsync(
-                                ct => handoffTiming.Run("validate_and_stage_saves", () => ExportSaveInstaller.Prepare(archive, key, roots, steamId, accountId, Path.Combine(work, "restore"), ct)),
-                                ct => steamCloud == null ? Task.CompletedTask : handoffTiming.RunAsync("steam_cloud_sync", () => steamCloud.SyncAsync(archive, status.Sha256, ct)),
-                                play.Closed.Token);
+                            var restore = await handoffTiming.RunAsync("validate_and_stage_saves", () => Task.Run(
+                                () => ExportSaveInstaller.Prepare(archive, key, roots, steamId, accountId, Path.Combine(work, "restore"), play.Closed.Token),
+                                play.Closed.Token));
                             prompt.ThrowIfExpired();
                             game = editor.Database.Games.Get(game.Id) ?? throw new InvalidOperationException("라이브러리에서 게임이 제거됨.");
                             if (game.IsRunning || game.IsLaunching || !game.IsInstalled || game.IsInstalling ||
                                 !string.Equals(game.InstallDirectory, roots["install"], StringComparison.OrdinalIgnoreCase))
                                 throw new InvalidOperationException("로컬 게임 상태 또는 설치 위치가 변경됨. 전환 중단.");
-                            if (steamId != null && SteamCloudBridge.ActiveSteamId() != steamId)
+                            if (steamId != null && ActiveSteamId() != steamId)
                                 throw new InvalidOperationException("Steam 계정이 변경되어 전환을 중단함.");
                             prompt.SetBusy(true, "기존 세이브를 백업하고 클라우드 세이브를 적용하는 중입니다.");
                             await handoffTiming.RunAsync("backup_and_commit_saves", () => Task.Run(() => restore.Commit(play.Closed.Token), play.Closed.Token));
@@ -238,10 +235,6 @@ namespace Playnite.DesktopApp.HoleInOne
                 using (var cleanupTiming = (handoffTiming ?? timing).Begin("close_view_and_cleanup"))
                 {
                     play.Closed.Cancel();
-                    if (steamPreparation != null)
-                    {
-                        try { await steamPreparation; } catch (Exception) { } // Observe work before disposing the bridge.
-                    }
                     prompt?.Dispose();
                     if (play.View != null) { play.View.WindowHost.Closed -= closed; play.View.Dispose(); }
                     active.Remove(game.Id);
@@ -253,7 +246,6 @@ namespace Playnite.DesktopApp.HoleInOne
                     }
                     if (session != null && preparation != null) await preparation.PlayFinishedAsync();
                     backend?.Dispose();
-                    steamCloud?.Dispose();
                     play.Closed.Dispose();
                     ActiveStreamCount--;
                     cleanupTiming.Complete();

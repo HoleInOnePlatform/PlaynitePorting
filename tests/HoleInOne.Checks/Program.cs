@@ -19,7 +19,6 @@ async Task Reject(Func<Task> action, string name)
 var token = CancellationToken.None;
 await PerformanceChecks.RunAsync(Check);
 await ReceiptChecks.RunAsync(Check);
-await ParallelChecks.RunAsync(Check);
 using var wire = new FakeBackend();
 using var client = new BackendConnection("http://localhost:5010", "test-token", wire);
 var session = await client.CreateSessionAsync(token);
