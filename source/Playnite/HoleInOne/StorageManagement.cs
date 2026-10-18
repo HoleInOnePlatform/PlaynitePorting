@@ -28,28 +28,40 @@ namespace Playnite.HoleInOne
                 if (dir.Exists && (dir.Attributes & FileAttributes.ReparsePoint) != 0)
                     throw new IOException("연결된 폴더는 자동 저장공간 관리에 사용할 수 없습니다: " + dir.FullName);
         }
-        public static ulong Measure(string path)
+        public static ulong RecordedSize(Game game)
         {
-            CheckLinks(path);
-            if (!Directory.Exists(path)) return 0;
-            ulong bytes = 0;
-            foreach (var file in Directory.EnumerateFiles(path))
+            // Steam's small manifest is cheap to read and also covers existing libraries
+            // whose database entry has never received installation size metadata.
+            if (game.PluginId == BuiltinStoreLibrary.SteamId && uint.TryParse(game.GameId, out var appId))
             {
-                if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
-                    throw new IOException("연결된 파일의 용량을 안전하게 계산할 수 없습니다: " + file);
-                bytes = checked(bytes + (ulong)new FileInfo(file).Length);
+                var common = Directory.GetParent(game.InstallDirectory);
+                var apps = common?.Parent;
+                if (common?.Name.Equals("common", StringComparison.OrdinalIgnoreCase) == true && apps != null)
+                {
+                    var manifest = Path.Combine(apps.FullName, "appmanifest_" + appId + ".acf");
+                    if (File.Exists(manifest))
+                    {
+                        var root = VdfNode.Read(File.ReadAllText(manifest));
+                        if (root.Children.TryGetValue("AppState", out var state) && state.Get("appid") == game.GameId &&
+                            ulong.TryParse(state.Get("SizeOnDisk"), out var size) && size > 0)
+                            return size;
+                    }
+                }
             }
-            foreach (var directory in Directory.EnumerateDirectories(path)) bytes = checked(bytes + Measure(directory));
-            return bytes;
+            if (game.InstallSize > 0) return game.InstallSize.Value;
+            throw new InvalidOperationException("설치 용량 정보가 없는 게임이 있습니다: " + game.Name + ". 라이브러리를 새로고침한 뒤 다시 확인해 주세요. 파일 전체 탐색은 수행하지 않습니다.");
         }
-        public static ulong Used(LauncherSettings settings)
+
+        public static ulong Used(LauncherSettings settings, IEnumerable<Game> games)
         {
             settings.ValidateStorage();
             var roots = new[] { Normalize(settings.SteamInstallDirectory), Normalize(settings.DownloadDirectory) }
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             ulong total = 0;
-            foreach (var root in roots.Where(r => !roots.Any(other => IsChild(other, r))))
-                total = checked(total + Measure(root));
+            var installed = games.Where(g => g.IsInstalled && roots.Any(root => IsChild(root, g.InstallDirectory)))
+                .GroupBy(g => Normalize(g.InstallDirectory), StringComparer.OrdinalIgnoreCase);
+            foreach (var group in installed)
+                total = checked(total + RecordedSize(group.First()));
             return total;
         }
         private static bool Idle(Game game) => game.IsInstalled && !game.IsRunning && !game.IsLaunching &&
@@ -80,10 +92,10 @@ namespace Playnite.HoleInOne
                     .ToDictionary(g => g.Id);
                 var originalPaths = eligible.ToDictionary(pair => pair.Key, pair => pair.Value.InstallDirectory);
                 var originalActivity = eligible.ToDictionary(pair => pair.Key, pair => pair.Value.LastActivity);
-                var plan = await Task.Run(() => StoragePlanner.Plan(Used(settings), required, maximum,
+                var plan = await Task.Run(() => StoragePlanner.Plan(Used(settings, games), required, maximum,
                     (ulong)new DriveInfo(drive).AvailableFreeSpace, eligible.Values.Select(g => new StorageCandidate
                     {
-                        Id = g.Id, Bytes = Measure(g.InstallDirectory), LastPlayed = g.LastActivity, IsProtected = settings.IsGameProtected(g.Id),
+                        Id = g.Id, Bytes = RecordedSize(g), LastPlayed = g.LastActivity, IsProtected = settings.IsGameProtected(g.Id),
                         OnTargetDrive = string.Equals(Path.GetPathRoot(g.InstallDirectory), drive, StringComparison.OrdinalIgnoreCase)
                     }).ToList()));
                 // The entire ordered list exists before the first uninstall request.
@@ -108,7 +120,8 @@ namespace Playnite.HoleInOne
                     }
                 }
                 // Never expand the deletion plan after side effects; leftovers/errors stop this attempt.
-                var used = await Task.Run(() => Used(settings));
+                var remaining = api.Database.Games.ToList();
+                var used = await Task.Run(() => Used(settings, remaining));
                 if (used > maximum - required || (ulong)new DriveInfo(drive).AvailableFreeSpace < required)
                     throw new IOException("정리 후 실제 여유 공간이 부족합니다. 추가 게임은 제거하지 않았습니다.");
                 return lease;

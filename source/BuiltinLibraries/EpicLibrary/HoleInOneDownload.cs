@@ -30,6 +30,7 @@ namespace EpicLibrary
                     || (bool?)item["needs_verification"] == true || (bool?)item["is_dlc"] == true
                     || !File.Exists(StoreFiles.SafeChild(directory, (string)item["executable"]))) continue;
                 games[id] = new GameMetadata { GameId = id, Name = (string)item["title"], InstallDirectory = directory,
+                    InstallSize = (ulong?)item["install_size"],
                     IsInstalled = true, Source = new MetadataNameProperty("Epic"),
                     Platforms = new HashSet<MetadataProperty> { new MetadataSpecProperty("pc_windows") } };
             }
@@ -76,6 +77,8 @@ namespace EpicLibrary
                     "--game-folder", Game.GameId, "--skip-dlcs");
                 var installed = await Task.Run(() => HoleInOneDownload.Installed());
                 if (!installed.TryGetValue(Game.GameId, out var game)) throw new InvalidOperationException("Epic 설치 파일 확인에 실패함.");
+                Game.InstallSize = game.InstallSize ?? required;
+                plugin.PlayniteApi.Database.Games.Update(Game);
                 InvokeOnInstalled(new GameInstalledEventArgs(new GameInstallationData { InstallDirectory = game.InstallDirectory }));
                 }
             }

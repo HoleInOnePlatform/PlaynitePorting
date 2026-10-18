@@ -120,6 +120,7 @@ namespace SteamLibrary.Services
                 GameId = gameId.ToString(),
                 Name = name.RemoveTrademarks().Trim(),
                 InstallDirectory = installDir,
+                InstallSize = ulong.TryParse(kv["SizeOnDisk"].Value, out var installedSize) ? (ulong?)installedSize : null,
                 IsInstalled = true,
                 Platforms = new HashSet<MetadataProperty> { new MetadataSpecProperty("pc_windows") }
             };
