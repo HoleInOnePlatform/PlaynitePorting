@@ -48,7 +48,7 @@ public static class NativeLogin
                 key.SetValue("RememberPassword", 1, RegistryValueKind.DWord);
             }
             ct.ThrowIfCancellationRequested();
-            using var process = Process.Start(new ProcessStartInfo(steamExe) { WorkingDirectory = root, UseShellExecute = false, Arguments = "-silent" });
+            using var process = NativeSteamProcess.Start(steamExe);
             if (process == null) throw new ProbeFailure("STEAM_START_FAILED");
             started = true;
             report("Steam 실행 중입니다. 직접 로그인하지 말고 자동 로그인 결과를 기다려 주세요.");
