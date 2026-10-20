@@ -5,6 +5,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Win32;
+using System.Diagnostics;
 
 namespace Playnite.HoleInOne
 {
@@ -68,6 +70,15 @@ namespace Playnite.HoleInOne
             foreach (var file in new[] { TokenPath, Path.Combine(DirectoryPath,"link.json") }) if (File.Exists(file)) File.Delete(file);
         }
         public static void Forget() { accountId = address = bearer = null; Current = null; }
+        public static void OpenLocalSteam()
+        {
+            var root = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) as string;
+            var executable = string.IsNullOrEmpty(root) ? null : Path.Combine(root, "steam.exe");
+            if (executable == null || !File.Exists(executable))
+                throw new InvalidOperationException("이 PC에 Steam을 먼저 설치해 주세요. 클라우드 플레이는 계속할 수 있습니다.");
+            // Open the PC client without replacing its account or passing authentication material.
+            Process.Start(new ProcessStartInfo { FileName = executable, UseShellExecute = true });
+        }
         public static void RequireLocalAccount()
         {
             var expected = Current?.IsLinked == true ? Current.SteamId : null;

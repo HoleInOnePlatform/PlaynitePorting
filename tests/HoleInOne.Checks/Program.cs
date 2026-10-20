@@ -17,6 +17,7 @@ async Task Reject(Func<Task> action, string name)
     throw new Exception("Expected rejection: " + name);
 }
 var token = CancellationToken.None;
+LocalDownloadChecks.Run(Check);
 using var wire = new FakeBackend();
 using var client = new BackendConnection("http://localhost:5010", "test-token", wire);
 var session = await client.CreateSessionAsync(token);

@@ -28,6 +28,32 @@ internal static class Program
         var closed = false;
         window.Closed += (_, __) => closed = true;
         var clicks = 0;
+        using (var download = new LocalDownloadPrompt(overlay))
+        {
+            var retries = 0;
+            var opened = 0;
+            download.RetryRequested += (_, __) => retries++;
+            download.OpenSteamRequested += (_, __) => opened++;
+            download.Update("PC Steam에 로그인한 뒤 다운로드를 다시 시도해 주세요. 클라우드 플레이는 계속할 수 있습니다.", true);
+            Layout(panel, 1100, 650);
+            var preview = new RenderTargetBitmap(1100, 650, 96, 96, PixelFormats.Pbgra32);
+            preview.Render(panel);
+            var downloadImage = new PngBitmapEncoder();
+            downloadImage.Frames.Add(BitmapFrame.Create(preview));
+            using (var output = File.Create(args[0] + "-local-download.png")) downloadImage.Save(output);
+            var buttons = FindButtons(overlay).ToArray();
+            var retry = buttons.Single(b => (string)b.Content == "다운로드 다시 시도");
+            buttons.Single(b => (string)b.Content == "PC Steam 열기").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            retry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            retry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(opened == 1 && retries == 1 && !retry.IsEnabled, "PC Steam opening and download retry are distinct; duplicate retry is suppressed");
+            Check(VisualTreeHelper.HitTest(panel, new Point(20, 400)).VisualHit == game, "waiting for PC login preserves game input outside the banner");
+            download.Update("다운로드 중", false);
+            Check(!retry.IsEnabled, "retry stays disabled during active installation");
+            download.Update("다운로드 취소됨", true);
+            Check(retry.IsEnabled, "cancelled download offers retry without reopening the stream");
+        }
+        Check(overlay.Children.Count == 0, "download banner is removed before handoff");
         using (var prompt = new DownloadHandoffPrompt(window, overlay, () => now))
         {
             prompt.TransferRequested += (_, __) => clicks++;
@@ -59,7 +85,14 @@ internal static class Program
             Check(closed && clicks == 1, "60 minute expiry closes the window without switching");
         }
         Check(overlay.Children.Count == 0, "toast is removed when disposed");
-        Console.WriteLine("10 UI checks passed.");
+        Console.WriteLine("Local download and handoff UI checks passed.");
+    }
+
+    private static System.Collections.Generic.IEnumerable<Button> FindButtons(DependencyObject parent)
+    {
+        if (parent is Button button) yield return button;
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            foreach (var child in FindButtons(VisualTreeHelper.GetChild(parent, i))) yield return child;
     }
     private static void Layout(FrameworkElement panel, double width, double height)
     { panel.Measure(new Size(width, height)); panel.Arrange(new Rect(0, 0, width, height)); panel.UpdateLayout(); }
