@@ -10,6 +10,7 @@ namespace Playnite.HoleInOne
         public bool Complete => installed() && !installing();
         public bool CanRetry => !Complete && !installing();
         public string Message { get; private set; }
+        public bool WaitingForAccount { get; private set; }
 
         public LocalDownloadSession(Func<bool> installed, Func<bool> installing, Action requireLocalAccount, Action install)
         {
@@ -25,9 +26,12 @@ namespace Playnite.HoleInOne
             try { requireLocalAccount(); }
             catch (InvalidOperationException error)
             {
-                Message = error.Message + "\n클라우드 플레이는 계속할 수 있습니다. PC Steam 로그인 후 '다운로드 다시 시도'를 눌러주세요.";
+                WaitingForAccount = true;
+                Message = "로컬 다운로드를 시작할 수 없습니다. " + error.Message +
+                    "\n클라우드 플레이는 계속할 수 있습니다. 같은 계정으로 PC Steam에 로그인하면 다운로드를 시작합니다.";
                 return;
             }
+            WaitingForAccount = false;
             install();
             Message = null;
             Refresh();
@@ -35,10 +39,21 @@ namespace Playnite.HoleInOne
 
         public void Refresh()
         {
-            if (Complete) Message = "PC 다운로드가 완료되었습니다.";
-            else if (installing()) Message = "PC에 다운로드 중입니다. 클라우드에서 계속 플레이할 수 있습니다.";
-            else if (Message == null || Message.StartsWith("PC에 다운로드 중", StringComparison.Ordinal))
-                Message = "PC 다운로드가 시작되지 않았거나 중단되었습니다. Steam에서 상태를 확인하고 다시 시도해 주세요.";
+            if (Complete || installing())
+            {
+                WaitingForAccount = false;
+                Message = null;
+            }
+            else if (WaitingForAccount)
+            {
+                // Only an authentication wait may resume automatically. Never repeatedly invoke
+                // an installer that failed or was cancelled by the user.
+                try { requireLocalAccount(); }
+                catch (InvalidOperationException) { return; }
+                Request();
+            }
+            else
+                Message = "로컬 다운로드가 시작되지 않았거나 중단되었습니다. PC Steam에서 다운로드 상태를 확인해 주세요. 클라우드 플레이는 계속할 수 있습니다.";
         }
     }
 }

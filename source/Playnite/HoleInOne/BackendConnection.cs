@@ -133,10 +133,63 @@ namespace Playnite.HoleInOne
         }
 
         public Task<ExportHandoffStatus> StartExportAsync(string sessionId, CancellationToken ct) =>
-            SendAsync<ExportHandoffStatus>(HttpMethod.Post, SessionPath(sessionId) + "/export-handoff", null, ct);
+            RecoverHandoffAsync(sessionId, true, ct);
 
         public Task<ExportHandoffStatus> GetExportAsync(string sessionId, CancellationToken ct) =>
-            SendAsync<ExportHandoffStatus>(HttpMethod.Get, SessionPath(sessionId) + "/export-handoff", null, ct);
+            RecoverHandoffAsync(sessionId, false, ct);
+
+        private async Task<ExportHandoffStatus> RecoverHandoffAsync(string sessionId, bool start, CancellationToken ct)
+        {
+            var path = SessionPath(sessionId) + "/export-handoff";
+            var submit = start;
+            using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                deadline.CancelAfter(TimeSpan.FromSeconds(75));
+                for (var attempt = 0; ; attempt++)
+                {
+                    try
+                    {
+                        using (var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token))
+                        {
+                            requestTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+                            return await SendAsync<ExportHandoffStatus>(submit ? HttpMethod.Post : HttpMethod.Get,
+                                path, null, requestTimeout.Token).ConfigureAwait(false);
+                        }
+                    }
+                    catch (BackendRequestException error) when (start && !submit && error.Status == 404)
+                    {
+                        // A lost POST response may still have started an export. Only submit again
+                        // when the server confirms that no transfer is available.
+                        submit = true;
+                    }
+                    catch (Exception error) when (IsTransientHandoffFailure(error, ct))
+                    {
+                        // Recover the existing request, including a failed one. Never silently
+                        // restart a completed/failed export after losing its POST response.
+                        submit = false;
+                    }
+                    if (ct.IsCancellationRequested) ct.ThrowIfCancellationRequested();
+                    if (attempt >= 10 || deadline.IsCancellationRequested)
+                        throw new HttpRequestException("세이브 전환 서버 연결이 일시적으로 끊겼습니다. 창을 닫지 말고 잠시 후 전환을 다시 시도해 주세요. 로컬 세이브는 변경하지 않았습니다.");
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(Math.Min(8, Math.Pow(2, attempt))), deadline.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        throw new HttpRequestException("세이브 전환 서버에 다시 연결하지 못했습니다. 창을 유지한 채 잠시 후 전환을 다시 시도해 주세요.");
+                    }
+                }
+            }
+        }
+
+        private static bool IsTransientHandoffFailure(Exception error, CancellationToken ct)
+        {
+            if (ct.IsCancellationRequested || error is LoginRequiredException) return false;
+            if (error is BackendRequestException response)
+                return response.Status == 502 || response.Status == 503 || response.Status == 504;
+            return error is HttpRequestException || error is OperationCanceledException;
+        }
 
         public Task DownloadCompleteAsync(string sessionId, CancellationToken ct) =>
             PostEmptyAsync(SessionPath(sessionId) + "/download-complete", null, ct);
@@ -264,7 +317,7 @@ namespace Playnite.HoleInOne
                             if (details?.ErrorCode == "baseline_unverified") throw new InvalidOperationException("클라우드의 기존 세이브 구성을 먼저 확인해야 함.");
                             throw new InvalidOperationException("이 게임의 세이브 저장 위치 또는 클라우드 전환 조건을 확인해야 함.");
                         }
-                        throw new HttpRequestException("홀인원 Backend 요청 실패: HTTP " + (int)response.StatusCode);
+                        throw new BackendRequestException((int)response.StatusCode, method.Method, path);
                     }
 
                     var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -341,6 +394,14 @@ namespace Playnite.HoleInOne
     {
         public string Error { get; set; }
         public string ErrorCode { get; set; }
+    }
+
+    internal sealed class BackendRequestException : HttpRequestException
+    {
+        public int Status { get; }
+        public BackendRequestException(int status, string method, string path)
+            : base("홀인원 Backend 요청 실패: HTTP " + status)
+        { Status = status; Data["Method"] = method; Data["Path"] = path; }
     }
 
     public sealed class CloudSession

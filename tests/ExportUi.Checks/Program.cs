@@ -28,13 +28,12 @@ internal static class Program
         var closed = false;
         window.Closed += (_, __) => closed = true;
         var clicks = 0;
-        using (var download = new LocalDownloadPrompt(overlay))
+        using (var notice = new LocalDownloadNotice(overlay, () => now))
         {
-            var retries = 0;
+            Check(overlay.Children.Count == 0, "normal download adds no overlay or permanent PC download panel");
             var opened = 0;
-            download.RetryRequested += (_, __) => retries++;
-            download.OpenSteamRequested += (_, __) => opened++;
-            download.Update("PC Steam에 로그인한 뒤 다운로드를 다시 시도해 주세요. 클라우드 플레이는 계속할 수 있습니다.", true);
+            notice.OpenSteamRequested += (_, __) => opened++;
+            notice.Show("로컬 다운로드를 시작할 수 없습니다. 같은 계정으로 PC Steam에 로그인하면 다운로드를 시작합니다. 클라우드 플레이는 계속할 수 있습니다.", true);
             Layout(panel, 1100, 650);
             var preview = new RenderTargetBitmap(1100, 650, 96, 96, PixelFormats.Pbgra32);
             preview.Render(panel);
@@ -42,18 +41,21 @@ internal static class Program
             downloadImage.Frames.Add(BitmapFrame.Create(preview));
             using (var output = File.Create(args[0] + "-local-download.png")) downloadImage.Save(output);
             var buttons = FindButtons(overlay).ToArray();
-            var retry = buttons.Single(b => (string)b.Content == "다운로드 다시 시도");
+            Check(!buttons.Any(b => (string)b.Content == "다운로드 다시 시도"), "no persistent retry control");
+            Check(VisualTreeHelper.HitTest(panel, new Point(1050, 100)).VisualHit == game, "failure notice leaves top-right game input unobstructed");
             buttons.Single(b => (string)b.Content == "PC Steam 열기").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            retry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            retry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Check(opened == 1 && retries == 1 && !retry.IsEnabled, "PC Steam opening and download retry are distinct; duplicate retry is suppressed");
-            Check(VisualTreeHelper.HitTest(panel, new Point(20, 400)).VisualHit == game, "waiting for PC login preserves game input outside the banner");
-            download.Update("다운로드 중", false);
-            Check(!retry.IsEnabled, "retry stays disabled during active installation");
-            download.Update("다운로드 취소됨", true);
-            Check(retry.IsEnabled, "cancelled download offers retry without reopening the stream");
+            Check(opened == 1 && overlay.Children.Count == 0, "opening Steam dismisses the one-time notice");
+            notice.Show("로컬 다운로드가 중단되었습니다. PC Steam에서 상태를 확인해 주세요.", false);
+            Check(FindButtons(overlay).Single(b => (string)b.Content == "PC Steam 열기").Visibility == Visibility.Collapsed,
+                "download errors only offer Steam launch when waiting for authentication");
+            now = now.AddSeconds(12);
+            typeof(LocalDownloadNotice).GetMethod("Tick", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(notice, new object[] { null, EventArgs.Empty });
+            Check(overlay.Children.Count == 0, "failure notice disappears after twelve seconds");
+            notice.Show("test", true);
+            FindButtons(overlay).Single(b => (string)b.Content == "닫기").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(overlay.Children.Count == 0, "user can dismiss notice immediately");
         }
-        Check(overlay.Children.Count == 0, "download banner is removed before handoff");
+        Check(overlay.Children.Count == 0, "failure notice is removed on disposal");
         using (var prompt = new DownloadHandoffPrompt(window, overlay, () => now))
         {
             prompt.TransferRequested += (_, __) => clicks++;

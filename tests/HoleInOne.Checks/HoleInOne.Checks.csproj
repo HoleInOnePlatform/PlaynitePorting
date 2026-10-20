@@ -10,6 +10,7 @@
     <Compile Include="PrewarmChecks.cs" />
     <Compile Include="SteamLinkChecks.cs" />
     <Compile Include="LocalDownloadChecks.cs" />
+    <Compile Include="HandoffRecoveryChecks.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/LocalDownloadSession.cs" Link="LocalDownloadSession.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/PreparedSessionManager.cs" Link="PreparedSessionManager.cs" />
     <Compile Include="StoreChecks.cs" />
