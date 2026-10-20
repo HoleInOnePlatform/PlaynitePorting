@@ -13,7 +13,7 @@ internal static class LocalSteamLoginChecks
     internal static void Run()
     {
         // This fixture edits only the disposable Windows CI user's registry, never a developer's PC.
-        if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true")
+        if (System.Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true")
             throw new InvalidOperationException("Run the registry fixture only on disposable GitHub Windows runners.");
         using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Valve\Steam\ActiveProcess"))
         {
