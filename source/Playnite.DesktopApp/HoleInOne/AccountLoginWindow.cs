@@ -41,7 +41,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 confirmationLabel.Visibility = confirmation.Visibility = registering ? Visibility.Visible : Visibility.Collapsed;
                 submit.Content = registering ? "가입하고 시작하기" : "로그인";
                 mode.Content = registering ? "이미 계정이 있습니다 · 로그인" : "처음이신가요? 회원가입";
-                status.Text = registering ? "아이디: 영문·숫자·밑줄·하이픈 3~32자\n비밀번호: 12~256자" : "";
+                status.Text = registering ? "아이디: 영문·숫자·밑줄·하이픈 3~32자\n비밀번호: 8~256자" : "";
                 password.Clear(); confirmation.Clear(); username.Focus();
             };
             var cancel = new Button { Content = "취소", IsCancel = true, MinHeight = 32, Margin = new Thickness(0, 8, 0, 0) }; panel.Children.Add(cancel);
@@ -53,8 +53,8 @@ namespace Playnite.DesktopApp.HoleInOne
                 if (!submit.IsEnabled) return;
                 if (string.IsNullOrWhiteSpace(username.Text) || password.Password.Length == 0)
                 { status.Text = "아이디와 비밀번호를 입력해 주세요."; return; }
-                if (registering && (password.Password.Length < 12 || password.Password != confirmation.Password))
-                { status.Text = "12자 이상의 비밀번호를 동일하게 두 번 입력해 주세요."; return; }
+                if (registering && (password.Password.Length < 8 || password.Password != confirmation.Password))
+                { status.Text = "8자 이상의 비밀번호를 동일하게 두 번 입력해 주세요."; return; }
                 mode.IsEnabled = confirmation.IsEnabled = false;
                 submit.IsEnabled = false; username.IsEnabled = false; password.IsEnabled = false;
                 status.Text = registering ? "가입 중…" : "로그인 중…";
