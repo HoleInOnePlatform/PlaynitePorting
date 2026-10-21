@@ -80,6 +80,13 @@ internal static class Program
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(clicks == 1 && !button.IsEnabled, "transition button rejects duplicate clicks while busy");
+            Layout(panel, 1100, 650);
+            Check(overlay.Children.Count == 2 && VisualTreeHelper.HitTest(panel, new Point(20, 400)).VisualHit != game,
+                "handoff screen covers remote reconnect controls and blocks underlying game input");
+            var transferring = new RenderTargetBitmap(1100, 650, 96, 96, PixelFormats.Pbgra32);
+            transferring.Render(panel);
+            var transferImage = new PngBitmapEncoder(); transferImage.Frames.Add(BitmapFrame.Create(transferring));
+            using (var output = File.Create(args[0] + "-transferring.png")) transferImage.Save(output);
             now = now.AddMinutes(30); prompt.SetBusy(false, "전환 실패: 재시도 가능");
             tick.Invoke(prompt, new object[] { null, EventArgs.Empty });
             Check(FindText(panel, "30:00") && button.IsEnabled, "retry preserves original deadline");

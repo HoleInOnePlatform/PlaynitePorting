@@ -37,6 +37,18 @@ namespace Playnite.HoleInOne
             return result;
         }
 
+        public async Task<AccountLogin> RegisterAsync(string username, string password, CancellationToken ct)
+        {
+            if (client.BaseAddress.Scheme != "https" && !client.BaseAddress.IsLoopback)
+                throw new InvalidOperationException("회원가입 서버에 안전하게 연결할 수 없습니다.");
+            var result = await SendAsync<AccountLogin>(HttpMethod.Post, "v1/holeinone/auth/register", new { username, password }, ct);
+            if (string.IsNullOrWhiteSpace(result.AccessToken) || result.AccessToken.Length != 64 ||
+                result.AccessToken.Any(c => !Uri.IsHexDigit(c)) || result.ExpiresAt <= DateTimeOffset.UtcNow ||
+                string.IsNullOrWhiteSpace(result.AccountId) || string.IsNullOrWhiteSpace(result.Username))
+                throw new InvalidDataException("회원가입 응답을 확인할 수 없습니다.");
+            return result;
+        }
+
         public Task LogoutAsync(CancellationToken ct) => PostEmptyAsync("v1/holeinone/auth/logout", null, ct);
 
         public BackendConnection(string backendUrl, string bearerToken = null, HttpMessageHandler handler = null)
@@ -286,6 +298,10 @@ namespace Playnite.HoleInOne
                         throw new PreparedSessionExpiredException();
                     if (!response.IsSuccessStatusCode)
                     {
+                        if (path == "v1/holeinone/auth/register" && (int)response.StatusCode < 500)
+                            throw new LoginRequiredException(response.StatusCode == System.Net.HttpStatusCode.Conflict ? "이미 사용 중인 아이디입니다. 다른 아이디를 입력하거나 로그인해 주세요." :
+                                (int)response.StatusCode == 429 ? "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." :
+                                response.StatusCode == System.Net.HttpStatusCode.BadRequest ? "아이디는 영문·숫자·밑줄·하이픈 3~32자, 비밀번호는 12~256자로 입력해 주세요." : "현재 회원가입을 이용할 수 없습니다.");
                         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                             throw new LoginRequiredException(path.EndsWith("/auth/login", StringComparison.Ordinal)
                                 ? "아이디 또는 비밀번호가 올바르지 않습니다." : "로그인이 만료되었습니다. 다시 로그인해 주세요.");
