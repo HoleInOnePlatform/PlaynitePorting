@@ -27,14 +27,16 @@ internal static class LocalSteamLoginChecks
                     new SteamLinkInfo { State = "linked", SteamId = "76561197960265739", Version = "fixture" });
                 key.SetValue("ActiveUser", 0, RegistryValueKind.DWord);
                 SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
-                using (var installer = new SteamInstallController(new Game { GameId = "2868840", Name = "Fixture" }, new Mock<IPlayniteAPI>().Object))
+                var api = new Mock<IPlayniteAPI>();
+                var dialogs = new Mock<IDialogsFactory>();
+                api.SetupGet(x => x.Dialogs).Returns(dialogs.Object);
+                using (var installer = new SteamInstallController(new Game { GameId = "2868840", Name = "Fixture" }, api.Object))
                 {
-                    try { installer.Install(new InstallActionArgs()); throw new Exception("Missing PC Steam login was not reproduced."); }
-                    catch (InvalidOperationException e)
-                    {
-                        if (!e.Message.Contains("로그인")) throw;
-                        Console.WriteLine("PASS reproduced original Steam install guard with a linked cloud account and no PC ActiveUser");
-                    }
+                    // The current install controller reports failures through the UI and cancellation,
+                    // because storage preparation made Install asynchronous on the base branch.
+                    installer.Install(new InstallActionArgs());
+                    dialogs.Verify(x => x.ShowErrorMessage(It.Is<string>(m => m.Contains("로그인")), It.IsAny<string>()), Times.Once());
+                    Console.WriteLine("PASS installation reports missing PC login before starting Steam or storage work");
                 }
                 var requests = 0;
                 var downloading = false;
