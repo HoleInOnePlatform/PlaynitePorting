@@ -501,6 +501,7 @@ namespace Playnite.HoleInOne
                 FailureStage == "download_export" ? "S3 파일 다운로드" :
                 FailureStage == "prepare_saves" ? "세이브 파일 준비" : "세이브 전환";
             var reason = ErrorCode == "export_timeout" ? "처리 시간이 초과됨." :
+                ErrorCode == "export_already_reserved" ? "이미 예약된 파일 내보내기의 저장 위치를 확인할 수 없어 전환을 중단함. 반복 시도 대신 세이브 복구가 필요함." :
                 ErrorCode == "export_not_configured" ? "클라우드 세이브 전환 설정이 아직 준비되지 않음." :
                 ErrorCode == "baseline_unverified" ? "클라우드 세이브 초기 상태 확인이 필요함." :
                 ErrorCode == "stream_not_exportable" ? "클라우드 세션이 종료되었거나 세이브를 내보낼 수 없는 상태임." :
