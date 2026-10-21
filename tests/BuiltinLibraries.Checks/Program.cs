@@ -24,6 +24,7 @@ internal static class Program
             Console.WriteLine("6 upstream Steam authentication checks passed.");
             SteamInstallChecks.Run();
             if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true") LocalSteamLoginChecks.Run();
+            SteamUninstallChecks.Run();
             return 0;
         }
         catch (Exception e) { Console.Error.WriteLine(e); return 1; }

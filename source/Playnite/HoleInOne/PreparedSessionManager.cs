@@ -12,6 +12,11 @@ namespace Playnite.HoleInOne
     }
     public sealed class PrewarmingUnavailableException : Exception { }
     public sealed class PreparedSessionExpiredException : Exception { }
+    public sealed class DeferredLaunchUnavailableException : Exception { }
+    public interface IDeferredPreparedSessionBackend
+    {
+        Task<CloudSession> ConnectPreparedSessionAsync(string sessionId, string gameId, CancellationToken ct);
+    }
     public interface IPreparedSessionBackend
     {
         Task<PreparedCloudSession> PrepareSessionAsync(string requestId, CancellationToken ct);
@@ -27,31 +32,75 @@ namespace Playnite.HoleInOne
         private readonly IPreparedSessionBackend backend;
         private readonly SemaphoreSlim gate = new SemaphoreSlim(1);
         private readonly Func<DateTimeOffset> now;
+        private readonly PerformanceTrace timing;
+        private readonly Action<string> log;
+        private readonly CancellationTokenSource shutdown = new CancellationTokenSource();
+        public string TimingId => timing.Id;
         private string requestId = Guid.NewGuid().ToString("N");
         private PreparedCloudSession prepared;
         private bool unsupported;
         private readonly bool requirePreparation;
         private bool closed;
         private bool claimed;
-        public PreparedSessionManager(IPreparedSessionBackend backend, Func<DateTimeOffset> now = null, bool requirePreparation = false)
-        { this.requirePreparation = requirePreparation; this.backend = backend; this.now = now ?? (() => DateTimeOffset.UtcNow); }
+        public PreparedSessionManager(IPreparedSessionBackend backend, Func<DateTimeOffset> now = null, bool requirePreparation = false, Action<string> log = null)
+        { this.requirePreparation = requirePreparation; timing = new PerformanceTrace("session_preparation", log); this.log = log; this.backend = backend; this.now = now ?? (() => DateTimeOffset.UtcNow); }
 
         private async Task PrepareCoreAsync(CancellationToken ct)
         {
             if (closed) throw new OperationCanceledException();
             if (prepared != null || unsupported) return;
-            try { prepared = await backend.PrepareSessionAsync(requestId, ct).ConfigureAwait(false); }
-            catch (PrewarmingUnavailableException) when (!requirePreparation) { unsupported = true; }
+            try { prepared = await timing.RunAsync("prepare_api", () => backend.PrepareSessionAsync(requestId, ct)).ConfigureAwait(false); }
+            catch (Exception error)
+            {
+                try { log?.Invoke("[HIO-PREPARE-ERROR] trace=" + timing.Id + " stage=prepare_api " + BackendConnection.DescribeFailure(error, ct)); }
+                catch { } // Logging must not change retry or fallback behavior.
+                if (error is PrewarmingUnavailableException && !requirePreparation) unsupported = true;
+                else throw;
+            }
         }
         public async Task PrepareAsync(CancellationToken ct)
         {
-            await gate.WaitAsync(ct).ConfigureAwait(false);
+            await timing.RunAsync("preparation_lock_wait", () => gate.WaitAsync(ct)).ConfigureAwait(false);
             try { await PrepareCoreAsync(ct).ConfigureAwait(false); }
             finally { gate.Release(); }
         }
+        public async Task PrepareWithRetriesAsync(CancellationToken ct, Func<TimeSpan, CancellationToken, Task> delay = null)
+        {
+            using (var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, shutdown.Token))
+            {
+                var token = linked.Token;
+                // Share the entire startup operation with Play, including the retry delay.
+                await gate.WaitAsync(token).ConfigureAwait(false);
+                try
+                {
+                    if (claimed) return;
+                    for (var attempt = 1; ; attempt++)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        try { await PrepareCoreAsync(token).ConfigureAwait(false); return; }
+                        catch (Exception error) when (attempt <= 5 && !token.IsCancellationRequested && IsRetryable(error))
+                        {
+                            try { log?.Invoke("[HIO-PREPARE-RETRY] trace=" + timing.Id + " retry=" + attempt + " max_retries=5 delay_ms=2000"); }
+                            catch { }
+                            await (delay != null ? delay(TimeSpan.FromSeconds(2), token) : Task.Delay(TimeSpan.FromSeconds(2), token)).ConfigureAwait(false);
+                        }
+                    }
+                }
+                finally { gate.Release(); }
+            }
+        }
+        private static bool IsRetryable(Exception error)
+        {
+            if (error is LoginRequiredException) return false;
+            if (error is OperationCanceledException) return true; // Caller cancellation is checked separately.
+            if (!(error is System.Net.Http.HttpRequestException)) return false;
+            if (error.Data["HioHttpStatus"] is int status)
+                return status == 408 || status == 429 || status >= 500;
+            return true;
+        }
         public async Task<CloudSession> PlayAsync(string gameId, CancellationToken ct)
         {
-            await gate.WaitAsync(ct).ConfigureAwait(false);
+            await timing.RunAsync("preparation_lock_wait", () => gate.WaitAsync(ct)).ConfigureAwait(false);
             try
             {
                 if (closed) throw new OperationCanceledException();
@@ -64,7 +113,8 @@ namespace Playnite.HoleInOne
                         await PrepareCoreAsync(ct).ConfigureAwait(false);
                         if (unsupported)
                         {
-                            var legacy = await backend.CreateSessionAsync(ct, gameId).ConfigureAwait(false);
+                            ct.ThrowIfCancellationRequested();
+                            var legacy = await timing.RunAsync("legacy_create_api", () => backend.CreateSessionAsync(ct, gameId)).ConfigureAwait(false);
                             claimed = true;
                             return legacy;
                         }
@@ -72,12 +122,14 @@ namespace Playnite.HoleInOne
                         {
                             if (requirePreparation) throw new InvalidOperationException("이 게임은 사용자별 클라우드 준비를 아직 지원하지 않습니다.");
                             await ReleaseCoreAsync(ct).ConfigureAwait(false);
-                            var legacy = await backend.CreateSessionAsync(ct, gameId).ConfigureAwait(false);
+                            ct.ThrowIfCancellationRequested();
+                            var legacy = await timing.RunAsync("legacy_create_api", () => backend.CreateSessionAsync(ct, gameId)).ConfigureAwait(false);
                             claimed = true;
                             return legacy;
                         }
                         if (prepared.ExpiresAt <= now()) throw new PreparedSessionExpiredException();
-                        var session = await backend.PlayPreparedSessionAsync(prepared.SessionId, gameId, ct).ConfigureAwait(false);
+                        ct.ThrowIfCancellationRequested();
+                        var session = await timing.RunAsync("play_api", () => backend.PlayPreparedSessionAsync(prepared.SessionId, gameId, ct)).ConfigureAwait(false);
                         claimed = true;
                         return session;
                     }
@@ -106,7 +158,8 @@ namespace Playnite.HoleInOne
         }
         public async Task StopAsync(CancellationToken ct)
         {
-            await gate.WaitAsync(ct).ConfigureAwait(false);
+            shutdown.Cancel();
+            await timing.RunAsync("preparation_lock_wait", () => gate.WaitAsync(ct)).ConfigureAwait(false);
             try
             {
                 closed = true;

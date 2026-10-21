@@ -1157,8 +1157,9 @@ namespace Playnite
             }
         }
 
-        public void UnInstallGame(Game game)
+        public async void UnInstallGame(Game game)
         {
+            if (game.IsUninstalling) return;
             if (game.IsRunning || game.IsLaunching)
             {
                 Dialogs.ShowMessage(LOC.GameUninstallRunningError, LOC.GameError,
@@ -1195,7 +1196,7 @@ namespace Playnite
                 controllers.RemoveInstallController(game.Id);
                 controllers.AddController(controller);
                 UpdateGameState(game.Id, null, null, null, true, null);
-                controller.Uninstall(new UninstallActionArgs());
+                await controller.UninstallAsync(new UninstallActionArgs());
             }
             catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
             {

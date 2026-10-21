@@ -19,6 +19,8 @@ async Task Reject(Func<Task> action, string name)
 var token = CancellationToken.None;
 LocalDownloadChecks.Run(Check);
 await HandoffRecoveryChecks.RunAsync(Check);
+await PerformanceChecks.RunAsync(Check);
+await ReceiptChecks.RunAsync(Check);
 using var wire = new FakeBackend();
 using var client = new BackendConnection("http://localhost:5010", "test-token", wire);
 var session = await client.CreateSessionAsync(token);
@@ -149,6 +151,7 @@ await PrewarmChecks.RunAsync(Check);
 await SteamLinkChecks.RunAsync(Check);
 StoreChecks.Run(Check);
 LauncherSettingsChecks.Run(Check);
+StorageChecks.Run(Check);
 var completedAt = DateTimeOffset.Parse("2026-10-03T12:00:00+09:00");
 var deadline = new HandoffDeadline(completedAt);
 Check(deadline.RemainingSeconds(completedAt) == 3600, "download completion starts a 60 minute countdown");

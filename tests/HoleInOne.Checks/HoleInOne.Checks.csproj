@@ -7,6 +7,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="PerformanceChecks.cs" />
+    <Compile Include="../../source/Playnite/HoleInOne/PerformanceTrace.cs" Link="PerformanceTrace.cs" />
+    <Compile Include="ReceiptChecks.cs" />
+    <Compile Include="../../source/Playnite/HoleInOne/ExportReceiptOutbox.cs" Link="ExportReceiptOutbox.cs" />
     <Compile Include="PrewarmChecks.cs" />
     <Compile Include="SteamLinkChecks.cs" />
     <Compile Include="LocalDownloadChecks.cs" />
@@ -15,6 +19,8 @@
     <Compile Include="../../source/Playnite/HoleInOne/PreparedSessionManager.cs" Link="PreparedSessionManager.cs" />
     <Compile Include="StoreChecks.cs" />
     <Compile Include="LauncherSettingsChecks.cs" />
+    <Compile Include="StorageChecks.cs" />
+    <Compile Include="../../source/Playnite/HoleInOne/StoragePlanner.cs" Link="StoragePlanner.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/LauncherSettings.cs" Link="LauncherSettings.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/ServiceConfiguration.cs" Link="ServiceConfiguration.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/HandoffDeadline.cs" Link="HandoffDeadline.cs" />

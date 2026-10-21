@@ -265,6 +265,7 @@ paket-files/
 .cr/
 
 # Visual Studio Code stuff
+*_wpftmp.csproj
 .vscode/
 
 build/nuget.exe

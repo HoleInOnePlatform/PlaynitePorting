@@ -43,15 +43,32 @@ namespace Playnite.HoleInOne
             public string Staged;
             public string Backup;
             public bool Existed;
+            public string OriginalHash;
+        }
+
+        public sealed class PreparedRestore
+        {
+            private readonly Action<CancellationToken> commit;
+            private int committed;
+            internal PreparedRestore(Action<CancellationToken> commit) { this.commit = commit; }
+            public void Commit(CancellationToken ct)
+            {
+                if (Interlocked.Exchange(ref committed, 1) != 0) throw new InvalidOperationException("이미 사용된 복원 준비입니다.");
+                commit(ct);
+            }
         }
 
         public static void Apply(string archivePath, string gameId, IDictionary<string, string> roots,
+            string steamId64, string steamAccountId, string workingDirectory, CancellationToken ct)
+            => Prepare(archivePath, gameId, roots, steamId64, steamAccountId, workingDirectory, ct).Commit(ct);
+
+        // Writes only staging files. Live saves are touched only by Commit after Steam succeeds.
+        public static PreparedRestore Prepare(string archivePath, string gameId, IDictionary<string, string> roots,
             string steamId64, string steamAccountId, string workingDirectory, CancellationToken ct)
         {
             if (Directory.Exists(workingDirectory)) throw new InvalidDataException("이미 사용된 세이브 복원 작업 폴더임.");
             Directory.CreateDirectory(workingDirectory);
             var changes = new List<Change>();
-            var committed = new List<Change>();
             using (var archive = ZipFile.OpenRead(archivePath))
             {
                 if (archive.Entries.Count > 50001) throw new InvalidDataException("세이브 파일 수가 너무 많음.");
@@ -104,11 +121,18 @@ namespace Playnite.HoleInOne
                         if (written != file.Size || Hex(hash.Hash) != file.Sha256) throw new InvalidDataException("세이브 파일 검증에 실패함.");
                     }
                     changes.Add(new Change { Target = target, Staged = staged, Existed = File.Exists(target),
+                        OriginalHash = File.Exists(target) ? HashFile(target) : null,
                         Backup = System.IO.Path.Combine(workingDirectory, "backup", changes.Count.ToString("D6")) });
                 }
                 if (archive.Entries.Any(e => !entries.Contains(e.FullName)) || archive.Entries.Select(e => e.FullName).Distinct(StringComparer.OrdinalIgnoreCase).Count() != archive.Entries.Count)
                     throw new InvalidDataException("세이브 압축에 중복 또는 예상하지 않은 항목이 포함됨.");
             }
+            return new PreparedRestore(token => Commit(changes, workingDirectory, gameId, token));
+        }
+
+        private static void Commit(List<Change> changes, string workingDirectory, string gameId, CancellationToken ct)
+        {
+            var committed = new List<Change>();
             Directory.CreateDirectory(System.IO.Path.Combine(workingDirectory, "backup"));
             // Record where each backup belongs so failures can be recovered after an app restart.
             File.WriteAllText(System.IO.Path.Combine(workingDirectory, "restore-map.json"), JsonConvert.SerializeObject(changes, Formatting.Indented));
@@ -116,7 +140,14 @@ namespace Playnite.HoleInOne
             {
                 ct.ThrowIfCancellationRequested();
                 RejectLinks(change.Target);
-                if (change.Existed) File.Copy(change.Target, change.Backup, false);
+                if (File.Exists(change.Target) != change.Existed ||
+                    (change.Existed && HashFile(change.Target) != change.OriginalHash))
+                    throw new IOException("복원 준비 중 로컬 세이브가 변경됨.");
+                if (change.Existed)
+                {
+                    File.Copy(change.Target, change.Backup, false);
+                    if (HashFile(change.Backup) != change.OriginalHash) throw new IOException("백업 중 로컬 세이브가 변경됨.");
+                }
             }
             try
             {

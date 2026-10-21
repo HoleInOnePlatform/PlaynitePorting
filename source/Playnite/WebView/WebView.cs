@@ -20,6 +20,7 @@ namespace Playnite.WebView
         private AutoResetEvent loadCompleteEvent = new AutoResetEvent(false);
         private WebViewWindow window;
         private readonly WebViewSettings settings;
+        private EventHandler<ConsoleMessageEventArgs> performanceConsole;
 
         public bool CanExecuteJavascriptInMainFrame => window.Browser.CanExecuteJavascriptInMainFrame;
         public event EventHandler NavigationChanged;
@@ -50,6 +51,22 @@ namespace Playnite.WebView
             window.Width = settings.WindowWidth;
             window.Height = settings.WindowHeight;
             window.PanelContent.Background = new SolidColorBrush(settings.WindowBackground);
+        }
+
+        // Only accept our numeric timing grammar. Never copy browser URLs or arbitrary console text.
+        public void EnablePerformanceLogging(string sessionId, Action<string> write)
+        {
+            if (performanceConsole != null) window.Browser.ConsoleMessage -= performanceConsole;
+            var allowed = new System.Text.RegularExpressions.Regex(
+                @"^\[HIO-PERF-BROWSER\] attempt=[0-9]+ stage=(page_to_game_running|aws_ready_wait|signal_offer|signal_exchange|signal_apply|launch_gate_wait|data_channel_ready|send_play|game_running_wait|steam_ready_wait|first_video_frame) event=(begin|end) elapsed_ms=[0-9]+ total_ms=[0-9]+ outcome=(pending|ok|failed|cancelled|interrupted)$");
+            performanceConsole = (sender, args) =>
+            {
+                if (args.Message != null && args.Message.Length < 512 && allowed.IsMatch(args.Message))
+                {
+                    try { write(args.Message + " session=" + sessionId); } catch (Exception) { }
+                }
+            };
+            window.Browser.ConsoleMessage += performanceConsole;
         }
 
         private async void Browser_IsBrowserInitializedChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -90,6 +107,7 @@ namespace Playnite.WebView
 
         public void Dispose()
         {
+            if (performanceConsole != null) window.Browser.ConsoleMessage -= performanceConsole;
             window.Browser.LoadingStateChanged -= Browser_LoadingStateChanged;
             window.Browser.TitleChanged -= Browser_TitleChanged;
             window.Browser.IsBrowserInitializedChanged -= Browser_IsBrowserInitializedChanged;

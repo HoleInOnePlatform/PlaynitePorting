@@ -1,20 +1,54 @@
 using Newtonsoft.Json;
 using System;
 using System.IO;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace Playnite.HoleInOne
 {
     public sealed class LauncherSettings
     {
+        public bool SteamCloudUploadEnabled { get; set; }
         public string BackendUrl { get; set; } = "http://127.0.0.1:5010/";
         public string BearerToken { get; set; }
         public bool RequireLogin { get; set; }
-        // Explicitly enabled after connecting a Steam account; no prompts are introduced during handoff.
-        public bool SteamCloudUploadEnabled { get; set; }
         [JsonIgnore]
         public bool CanChangeDevelopmentBackend { get; private set; }
+        // Retain the serialized name for existing Epic installations/settings.
         public string DownloadDirectory { get; set; } = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HoleInOne", "Games");
+            Environment.GetEnvironmentVariable("ProgramW6432") ?? Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Epic Games");
+        public string SteamInstallDirectory { get; set; } = DefaultSteamDirectory();
+        public HashSet<Guid> ProtectedGameIds { get; set; } = new HashSet<Guid>();
+        public bool IsGameProtected(Guid id) => ProtectedGameIds?.Contains(id) == true;
+        private long? maximumStorageGiB;
+        public long MaximumStorageGiB
+        {
+            get => maximumStorageGiB ?? new[] { SteamInstallDirectory, DownloadDirectory }
+                .Select(path => Path.GetPathRoot(Path.GetFullPath(path)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Sum(drive => new DriveInfo(drive).TotalSize) / (1024L * 1024 * 1024);
+            set => maximumStorageGiB = value;
+        }
+
+        private static string DefaultSteamDirectory()
+        {
+            using (var key = Microsoft.Win32.Registry.CurrentUser?.OpenSubKey(@"Software\Valve\Steam"))
+                return Path.Combine(key?.GetValue("SteamPath") as string ?? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam"), "steamapps", "common");
+        }
+
+        public void ValidateStorage()
+        {
+            foreach (var path in new[] { DownloadDirectory, SteamInstallDirectory })
+            {
+                if (string.IsNullOrWhiteSpace(path) || !Path.IsPathRooted(path) || path.IndexOf(':') != 1)
+                    throw new ArgumentException("설치 폴더는 로컬 드라이브의 절대 경로여야 합니다.");
+                var full = Path.GetFullPath(path).TrimEnd('\\', '/');
+                if (full.Length <= 3) throw new ArgumentException("드라이브 전체를 설치 폴더로 지정할 수 없습니다.");
+            }
+            if (MaximumStorageGiB <= 0 || MaximumStorageGiB > long.MaxValue / (1024L * 1024 * 1024))
+                throw new ArgumentException("최대 저장공간은 1 GiB 이상의 유효한 정수여야 합니다.");
+        }
 
         public static string SettingsPath => Path.Combine(PlaynitePaths.ConfigRootPath, "holeinone.json");
         public static string DevelopmentAddressPath => Path.Combine(PlaynitePaths.ConfigRootPath, "holeinone.development-address.json");
@@ -67,7 +101,7 @@ namespace Playnite.HoleInOne
         public void Save()
         {
             BackendConnection.ValidateAddress(BackendUrl);
-            if (!Path.IsPathRooted(DownloadDirectory)) throw new ArgumentException("다운로드 폴더의 절대 경로가 필요함.");
+            ValidateStorage();
             Directory.CreateDirectory(PlaynitePaths.ConfigRootPath);
             File.WriteAllText(SettingsPath, JsonConvert.SerializeObject(this, Formatting.Indented));
         }

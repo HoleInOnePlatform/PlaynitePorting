@@ -28,6 +28,14 @@ namespace SteamLibrary.Services
 
     internal static class SteamInstallService
     {
+        internal static SteamInstallLocation ConfiguredLocation(string directory)
+        {
+            var location = GetLocations().FirstOrDefault(item => string.Equals(
+                Playnite.HoleInOne.StorageManagement.Normalize(System.IO.Path.Combine(item.Path, "steamapps", "common")),
+                Playnite.HoleInOne.StorageManagement.Normalize(directory), StringComparison.OrdinalIgnoreCase));
+            if (location == null) throw new IOException("설정한 Steam 설치 폴더가 등록된 라이브러리에 없습니다. Steam 설정 → 저장공간에서 라이브러리를 추가한 뒤 해당 폴더의 steamapps\\common을 지정해 주세요.");
+            return location;
+        }
         // Keep Steam's volume IDs: filtering unavailable drives must never renumber them.
         internal static List<SteamInstallLocation> ReadLocations(KeyValue data, string steamPath)
         {
