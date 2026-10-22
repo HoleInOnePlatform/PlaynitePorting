@@ -16,6 +16,9 @@ namespace Playnite.DesktopApp.HoleInOne
             public PreparedSessionManager Sessions;
         }
         private static Context current;
+        private static Task pendingPreparation = Task.CompletedTask;
+        private static Task pendingCleanup = Task.CompletedTask;
+        private static CancellationTokenSource preparationCancellation = new CancellationTokenSource();
 
         // Accessed on the WPF dispatcher. Each context owns its credentials and cleanup connection.
         public static PreparedSessionManager Get(LauncherSettings settings)
@@ -25,26 +28,31 @@ namespace Playnite.DesktopApp.HoleInOne
             {
                 var previous = current;
                 current = null;
-                _ = StopAsync(previous);
+                pendingCleanup = Task.WhenAll(pendingCleanup, StopAsync(previous));
             }
             if (current == null)
             {
                 var backend = new BackendConnection(settings.BackendUrl, token);
                 current = new Context { Address = settings.BackendUrl, Token = token, Backend = backend,
-                    Sessions = new PreparedSessionManager(backend, requirePreparation: settings.RequireLogin, log: line => LogManager.GetLogger().Info(line)) };
+                    Sessions = new PreparedSessionManager(backend, log: line => LogManager.GetLogger().Info(line)) };
             }
             return current.Sessions;
         }
-        public static async void Begin()
+        public static void Begin() { pendingPreparation = Task.WhenAll(pendingPreparation, BeginAsync()); }
+        private static async Task BeginAsync()
         {
             try
             {
                 var settings = LauncherSettings.Load();
+                var generation = LauncherLogin.Generation;
+                var cancellation = preparationCancellation.Token;
                 // Startup already completed the login dialog. Do not show another dialog here.
-                if (settings.RequireLogin && string.IsNullOrEmpty(LauncherLogin.TokenFor(settings))) return;
-                if (settings.RequireLogin && (!SteamLinkContext.IsConfigured || !(await SteamLinkContext.RefreshAsync(CancellationToken.None)).IsLinked)) return;
+                if (string.IsNullOrEmpty(LauncherLogin.TokenFor(settings))) return;
+                if ((!SteamLinkContext.IsConfigured || !(await SteamLinkContext.RefreshAsync(cancellation)).IsLinked)) return;
+                cancellation.ThrowIfCancellationRequested();
+                if (generation != LauncherLogin.Generation) return;
                 new ExportReceipts(settings).Start();
-                await Get(settings).PrepareWithRetriesAsync(CancellationToken.None);
+                await Get(settings).PrepareWithRetriesAsync(cancellation);
             }
             catch (Exception error)
             {
@@ -54,9 +62,19 @@ namespace Playnite.DesktopApp.HoleInOne
         }
         public static Task ResetAsync()
         {
+            var previousCancellation = preparationCancellation;
+            previousCancellation.Cancel();
+            preparationCancellation = new CancellationTokenSource();
             var previous = current;
             current = null;
-            return previous == null ? Task.CompletedTask : StopAsync(previous);
+            pendingCleanup = Task.WhenAll(pendingCleanup, previous == null ? Task.CompletedTask : StopAsync(previous),
+                DisposeAfterPreparationAsync(previousCancellation, pendingPreparation));
+            return pendingCleanup;
+        }
+        private static async Task DisposeAfterPreparationAsync(CancellationTokenSource cancellation, Task preparation)
+        {
+            try { await preparation.ConfigureAwait(false); }
+            finally { cancellation.Dispose(); }
         }
         private static async Task StopAsync(Context context)
         {
@@ -72,7 +90,7 @@ namespace Playnite.DesktopApp.HoleInOne
         public static void Shutdown()
         {
             // WPF Exit cannot await. All network waits below avoid its synchronization context.
-            try { ResetAsync().Wait(TimeSpan.FromSeconds(5)); }
+            try { Task.WhenAll(ResetAsync(), pendingPreparation).Wait(TimeSpan.FromSeconds(5)); }
             catch (Exception) { }
         }
     }

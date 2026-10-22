@@ -1,5 +1,7 @@
 param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
+    [string]$BackendDirectory = (Join-Path $PSScriptRoot '../../Backend'),
+    [switch]$NoRestore,
     [Parameter(Mandatory = $true)][string]$OutputDirectory
 )
 
@@ -7,9 +9,19 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $destination = [IO.Path]::GetFullPath($OutputDirectory)
 $packages = Join-Path $projectRoot '.packages'
+$coreRoot = Join-Path ([IO.Path]::GetFullPath($BackendDirectory)) 'tools/SteamLink.Core'
+$lock = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'steam-link-core.lock.json') -Raw | ConvertFrom-Json
+foreach ($file in $lock.files) {
+    if ((Get-FileHash -LiteralPath (Join-Path $coreRoot $file.path) -Algorithm SHA256).Hash -ne $file.sha256) {
+        throw "SteamLink.Core source differs from locked revision $($lock.revision). Review and update the lock before building."
+    }
+}
+$coreProject = Join-Path $coreRoot 'SteamLink.Core.csproj'
+$restoreArgs = @()
+if ($NoRestore) { $restoreArgs = @('--no-restore') }
 & dotnet publish (Join-Path $projectRoot 'tools/SteamLink/SteamLink.csproj') `
     -c $Configuration -r win-x64 --self-contained true -o $destination `
-    "-p:RestorePackagesPath=$packages" -p:PublishSingleFile=false
+    "-p:RestorePackagesPath=$packages" "-p:SteamLinkCoreProject=$coreProject" -p:PublishSingleFile=false @restoreArgs
 if ($LASTEXITCODE -ne 0) { throw "Steam link module publish failed: $LASTEXITCODE" }
 
 $licenses = Join-Path $destination 'Licenses'
@@ -32,3 +44,9 @@ QRCoder 1.8.0: https://github.com/codebude/QRCoder
 SteamKit2 and its dependencies remain separate, replaceable assemblies.
 '@ | Set-Content -LiteralPath (Join-Path $licenses 'Sources.txt') -Encoding UTF8
 Write-Host "Steam link module: $destination/HoleInOne.SteamLink.exe"
+
+$artifactFiles = Get-ChildItem -LiteralPath $destination -Recurse -File | Where-Object Name -ne 'artifact-manifest.json' | ForEach-Object {
+    @{ path=$_.FullName.Substring($destination.TrimEnd('\').Length+1).Replace('\','/'); sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+}
+@{ contractVersion=2; coreRevision=$lock.revision; files=@($artifactFiles) } | ConvertTo-Json -Depth 5 |
+    Set-Content -LiteralPath (Join-Path $destination 'artifact-manifest.json') -Encoding UTF8

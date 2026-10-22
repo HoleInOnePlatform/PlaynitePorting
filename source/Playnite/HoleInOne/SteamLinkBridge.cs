@@ -32,13 +32,19 @@ namespace Playnite.HoleInOne
                 var line = await read;
                 if (line == null || line.Length > 4*1024*1024) throw new InvalidDataException("Steam 연결 모듈이 종료되었습니다.");
                 var message = JObject.Parse(line);
-                if ((string)message["type"] == "error") throw new SteamLinkException("steam_reauthentication_required");
+                if ((string)message["type"] == "error")
+                {
+                    var code = (string)message["code"];
+                    if (code == "cancelled_or_timeout") { ct.ThrowIfCancellationRequested(); throw new TimeoutException("Steam 연결 시간이 초과되었습니다."); }
+                    throw new SteamLinkException(code == "STEAM_LOGON_REJECTED" ? "steam_reauthentication_required" : "steam_validation_unavailable");
+                }
                 return message;
             }
         }
         public async Task<SteamLinkInfo> ConnectAsync(bool qr, string username, string password,
             Action<byte[]> showQr, Func<bool,bool,Task<string>> guard, CancellationToken ct)
         {
+            var generation = SteamLinkContext.Generation;
             Send(new { operation="connect", method=qr?"qr":"password", username, password });
             password = null;
             while (true)
@@ -50,6 +56,7 @@ namespace Playnite.HoleInOne
                 if(type!="authenticated") throw new InvalidDataException("잘못된 Steam 인증 응답입니다.");
                 var requestId = Guid.NewGuid().ToString("N");
                 SteamLinkInfo link = null;
+                SteamLinkContext.RequireGeneration(generation);
                 using(var backend=SteamLinkContext.Backend())
                 {
                     // Repeat only uncertain transport failures, with the SAME request ID and credential.
@@ -60,9 +67,11 @@ namespace Playnite.HoleInOne
                     }
                 }
                 message.Remove("refreshToken");
+                SteamLinkContext.RequireGeneration(generation);
                 if(link?.IsLinked!=true || link.SteamId!=(string)message["steamId"]) throw new InvalidDataException("서버에서 확인한 Steam 계정이 다릅니다.");
                 Send(new{operation="commit",steamId=link.SteamId,tokenPath=SteamLinkContext.TokenPath});
                 var saved=await ReadAsync(ct);
+                SteamLinkContext.RequireGeneration(generation);
                 if((string)saved["type"]!="saved") throw new IOException("이 PC의 Steam 연결 저장을 완료하지 못했습니다.");
                 SteamLinkContext.SaveMetadata(link);
                 return link;
@@ -70,11 +79,13 @@ namespace Playnite.HoleInOne
         }
         public async Task<JArray> LibraryAsync(CancellationToken ct)
         {
+            var generation = SteamLinkContext.Generation;
             await SteamLinkContext.RefreshAsync(ct).ConfigureAwait(false);
             if(!SteamLinkContext.HasLocalLogin) throw new SteamLinkException("steam_link_required");
             var expected=SteamLinkContext.Current.SteamId;
             Send(new{operation="library",steamId=expected,tokenPath=SteamLinkContext.TokenPath});
             var result=await ReadAsync(ct).ConfigureAwait(false);
+            SteamLinkContext.RequireGeneration(generation);
             if((string)result["type"]!="library" || (string)result["steamId"]!=expected || !(result["games"] is JArray games))
                 throw new InvalidDataException("Steam 라이브러리 응답이 일치하지 않습니다.");
             return games;

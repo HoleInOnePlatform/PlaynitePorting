@@ -1,4 +1,8 @@
+> 2026-10-22 현재 코드·빌드·모의 검증 완료 기록은 [REFACTORING_TASKS.md](REFACTORING_TASKS.md)의 최종 실행 절을 따른다. 아래는 기존 작업 이력이며 실게임 검증은 이번 범위에서 제외한다.
+
 # 홀인원(HoleInOne) 개발 Task
+
+> 최신 리팩토링 작업은 [리팩토링 Task](REFACTORING_TASKS.md)를 따름. 아래는 초기 구현 기록이며, 모닥불·GameLoader 전환 등 일부 설명은 현재 실행 경로와 다름.
 
 Playnite를 기반으로 인스턴트 플레이와 Steam·Epic 통합 관리를 구현하는 포팅 프로젝트임. 이번 범위는 데스크톱만 포함함.
 

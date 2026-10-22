@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$ApplicationDirectory,
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
-    [string]$OutputZip
+    [string]$OutputZip,
+    [switch]$TeamTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,10 +12,11 @@ if (Test-Path -LiteralPath $destination) { throw '대상 폴더가 이미 존재
 if ($destination.StartsWith($source.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw '배포 폴더는 원본 앱 폴더 밖에 생성해야 함.'
 }
-foreach ($file in @('HoleInOne.exe', 'HoleInOne.BrowserProcess.exe', 'Playnite.dll', 'libcef.dll')) {
+foreach ($file in @('HoleInOne.exe', 'HoleInOne.BrowserProcess.exe', 'Playnite.dll', 'libcef.dll',
+    'Tools/SteamLink/HoleInOne.SteamLink.exe', 'Tools/SteamLink/artifact-manifest.json', 'Tools/Legendary/legendary.exe')) {
     if (!(Test-Path -LiteralPath (Join-Path $source $file) -PathType Leaf)) { throw "필수 파일 누락: $file" }
 }
-foreach ($name in @('UserData', 'ExtensionsData', 'holeinone.development-address.json', 'appsettings.Auth.json', 'appsettings.Local.json')) {
+foreach ($name in @('UserData', 'ExtensionsData', 'holeinone.development.json', 'Tools/SteamCloud', 'holeinone.development-address.json', 'appsettings.Auth.json', 'appsettings.Local.json')) {
     if (Test-Path -LiteralPath (Join-Path $source $name)) { throw "개인 데이터 포함: $name" }
 }
 if (Get-ChildItem -LiteralPath $source -Recurse -Force | Where-Object {
@@ -42,9 +44,7 @@ foreach ($item in Get-ChildItem -LiteralPath $source -Force) {
     Copy-Item -LiteralPath $item.FullName -Destination $target -Recurse -Force
 }
 $arguments = ''
-if (Test-Path -LiteralPath (Join-Path $source 'holeinone.development.json')) {
-    $arguments = ' --userdatadir "%LOCALAPPDATA%\HoleInOne-TeamTest" --nolibupdate'
-}
+if ($TeamTest) { $arguments = ' --userdatadir "%LOCALAPPDATA%\HoleInOne-TeamTest" --nolibupdate' }
 @"
 @echo off
 start "" /D "%~dp0App" "%~dp0App\HoleInOne.exe"$arguments %*
@@ -55,7 +55,7 @@ call "%~dp0..\Start-HoleInOne.cmd" --safestartup %*
 '@ | Set-Content -LiteralPath (Join-Path $diagnostics 'Safe Mode.cmd') -Encoding ASCII
 if (Test-Path -LiteralPath (Join-Path $source 'Test-Backend.ps1')) {
     $check = Get-Content -LiteralPath (Join-Path $source 'Test-Backend.ps1') -Raw
-    $check = $check.Replace("Join-Path `$PSScriptRoot 'holeinone.development.json'", "Join-Path `$PSScriptRoot '../App/holeinone.development.json'")
+    $check = $check.Replace("Join-Path `$PSScriptRoot 'holeinone.development.json'", "Join-Path `$PSScriptRoot '../App/holeinone.service.json'")
     $check | Set-Content -LiteralPath (Join-Path $diagnostics 'Test-Backend.ps1') -Encoding UTF8
 }
 @'

@@ -39,15 +39,8 @@ namespace Playnite.DesktopApp.HoleInOne
             var cancel=new Button { Content="인증 취소", Margin=new Thickness(0,6,0,6) }; panel.Children.Add(cancel); cancel.Click+=(s,e)=>operation?.Cancel();
             var close=new Button { Content="닫고 라이브러리 사용", Margin=new Thickness(0,6,0,0) }; panel.Children.Add(close); close.Click+=(s,e)=>Close();
             qr.Click+=async(s,e)=>await ConnectAsync(true); login.Click+=async(s,e)=>await ConnectAsync(false);
-            release.Click+=async(s,e)=>await ChangeAsync(async()=>{
-                await CloudPreparation.ResetAsync();
-                using(var backend=SteamLinkContext.Backend()) await backend.ReleaseSteamPreparationAsync(closed.Token);
-            });
-            unlink.Click+=async(s,e)=>await ChangeAsync(async()=>{
-                using(var backend=SteamLinkContext.Backend()) await backend.DeleteSteamLinkAsync(closed.Token);
-                SteamLinkContext.DeleteLocal();
-                await CloudPreparation.ResetAsync();
-            });
+            release.Click+=async(s,e)=>await ChangeAsync(()=>SteamSetup.ReleasePreparationAsync(closed.Token));
+            unlink.Click+=async(s,e)=>await ChangeAsync(()=>SteamSetup.UnlinkAsync(closed.Token));
             Closed+=(s,e)=>{ closed.Cancel(); operation?.Cancel(); password.Clear(); picture.Source=null; };
             Loaded+=async(s,e)=>await RefreshAsync();
         }
@@ -120,9 +113,21 @@ namespace Playnite.DesktopApp.HoleInOne
     }
     public static class SteamSetup
     {
+        public static async Task ReleasePreparationAsync(CancellationToken ct)
+        {
+            await CloudPreparation.ResetAsync();
+            using (var backend = SteamLinkContext.Backend()) await backend.ReleaseSteamPreparationAsync(ct);
+        }
+        public static async Task UnlinkAsync(CancellationToken ct)
+        {
+            var generation = SteamLinkContext.Generation;
+            using (var backend = SteamLinkContext.Backend()) await backend.DeleteSteamLinkAsync(ct);
+            SteamLinkContext.RequireGeneration(generation);
+            SteamLinkContext.DeleteLocal();
+            await CloudPreparation.ResetAsync();
+        }
         public static async Task OnStartupAsync()
         {
-            if(!LauncherSettings.Load().RequireLogin)return;
             try { if(SteamLinkContext.IsConfigured && (await SteamLinkContext.RefreshAsync(CancellationToken.None)).IsLinked) return; }
             catch(Exception) { }
             new SteamSetupWindow { Owner=Application.Current.MainWindow }.ShowDialog();

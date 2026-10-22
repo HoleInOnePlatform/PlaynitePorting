@@ -12,16 +12,16 @@ using System.Threading.Tasks;
 namespace Playnite.HoleInOne
 {
     // Uses the same HTTP contract as the Backend project. No Playnite service calls.
-    public sealed partial class BackendConnection : IDisposable, IPreparedSessionBackend, IDeferredPreparedSessionBackend
+    public sealed partial class BackendConnection : IDisposable, IPreparedSessionBackend
     {
         private readonly HttpClient client;
 
         public async Task CheckDevelopmentHealthAsync(CancellationToken cancellationToken)
         {
             var health = await SendAsync<BackendHealth>(HttpMethod.Get, "health", null, cancellationToken);
-            if (health.Status != "ok" || health.Service != "holeinone" || health.ContractVersion != 1
-                || health.Authentication != "development")
-                throw new InvalidDataException("호환되는 홀인원 개발 서버가 아닙니다. 주소를 확인해 주세요.");
+            if (health.Status != "ok" || health.Service != "holeinone" || health.ContractVersion != 2
+                || health.Authentication != "accounts")
+                throw new InvalidDataException("서버와 앱의 계약 버전이 일치하지 않습니다. 서비스 주소와 앱 업데이트를 확인해 주세요.");
         }
 
         public async Task<AccountLogin> LoginAsync(string username, string password, CancellationToken cancellationToken)
@@ -32,7 +32,7 @@ namespace Playnite.HoleInOne
                 new { username, password }, cancellationToken);
             if (string.IsNullOrWhiteSpace(result.AccessToken) || result.AccessToken.Length != 64 ||
                 result.AccessToken.Any(c => !Uri.IsHexDigit(c)) || result.ExpiresAt <= DateTimeOffset.UtcNow ||
-                string.IsNullOrWhiteSpace(result.Username))
+                string.IsNullOrWhiteSpace(result.AccountId) || string.IsNullOrWhiteSpace(result.Username))
                 throw new InvalidDataException("로그인 응답을 확인할 수 없습니다.");
             return result;
         }
@@ -58,27 +58,11 @@ namespace Playnite.HoleInOne
                 ? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
                 : new HttpClient(handler);
             client.BaseAddress = address;
-            client.Timeout = TimeSpan.FromSeconds(90);
+            client.Timeout = Timeout.InfiniteTimeSpan;
             if (!string.IsNullOrWhiteSpace(bearerToken))
             {
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
             }
-        }
-
-        public async Task<CloudSession> CreateSessionAsync(CancellationToken cancellationToken, string gameId = null)
-        {
-            if (gameId != null) ValidateId(gameId);
-            var session = await SendAsync<CloudSession>(HttpMethod.Post, "v1/holeinone/sessions",
-                gameId == null ? null : new { gameId }, cancellationToken);
-            ValidateId(session.SessionId);
-            if (gameId != null && session.GameId != gameId)
-                throw new InvalidDataException("요청한 게임과 클라우드 세션이 다름.");
-            if (!Uri.TryCreate(session.StreamUrl, UriKind.Absolute, out var streamUri) || streamUri.Scheme != "https")
-            {
-                throw new InvalidOperationException("클라우드 플레이 URL이 없음. Backend의 스트리밍 설정을 확인해야 함.");
-            }
-
-            return session;
         }
 
         public async Task<PreparedCloudSession> PrepareSessionAsync(string requestId, CancellationToken ct)
@@ -92,19 +76,9 @@ namespace Playnite.HoleInOne
         }
 
         public async Task<CloudSession> PlayPreparedSessionAsync(string sessionId, string gameId, CancellationToken ct)
-            => await ClaimPreparedSessionAsync(sessionId, gameId, false, ct).ConfigureAwait(false);
-
-        public async Task<CloudSession> ConnectPreparedSessionAsync(string sessionId, string gameId, CancellationToken ct)
-            => await ClaimPreparedSessionAsync(sessionId, gameId, true, ct).ConfigureAwait(false);
-
-        public Task AllowPreparedLaunchAsync(string sessionId, CancellationToken ct) =>
-            PostEmptyAsync(SessionPath(sessionId) + "/allow-launch", null, ct);
-
-        private async Task<CloudSession> ClaimPreparedSessionAsync(string sessionId, string gameId, bool deferred, CancellationToken ct)
         {
             ValidateId(gameId);
-            var session = await SendAsync<CloudSession>(HttpMethod.Post, SessionPath(sessionId) + (deferred ? "/connect-only" : "/play"), new { gameId }, ct).ConfigureAwait(false);
-            if (deferred && !session.LaunchDeferred) throw new InvalidDataException("게임 시작 대기를 확인하지 못했습니다.");
+            var session = await SendAsync<CloudSession>(HttpMethod.Post, SessionPath(sessionId) + "/play", new { gameId }, ct).ConfigureAwait(false);
             if (session.SessionId != sessionId || session.GameId != gameId) throw new InvalidDataException("요청한 게임과 준비된 세션이 다릅니다.");
             // A local backend may advertise its public HTTPS tunnel for cloud callbacks.
             // Never navigate that advertised origin: use the configured loopback server instead.
@@ -122,49 +96,13 @@ namespace Playnite.HoleInOne
             return session;
         }
 
-        public async Task<List<CampfireEvent>> GetCampfiresAsync(string sessionId, long after, CancellationToken cancellationToken)
-        {
-            if (after < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(after));
-            }
-
-            var events = await SendAsync<List<CampfireEvent>>(HttpMethod.Get,
-                SessionPath(sessionId) + "/campfires?after=" + after, null, cancellationToken);
-            long sequence = after;
-            foreach (var entry in events)
-            {
-                if (entry == null || entry.Notice == null || entry.Sequence <= sequence)
-                {
-                    throw new InvalidDataException("잘못된 모닥불 알림 응답임.");
-                }
-
-                ValidateId(entry.Notice.RunId);
-                sequence = entry.Sequence;
-            }
-
-            return events;
-        }
-
-        public Task<SaveTransferStatus> RequestSaveAsync(string sessionId, string runId, CancellationToken cancellationToken)
-        {
-            ValidateId(runId);
-            return SendAsync<SaveTransferStatus>(HttpMethod.Post, SessionPath(sessionId) + "/save-requests",
-                new { runId }, cancellationToken);
-        }
-
-        public Task<SaveTransferStatus> GetSaveAsync(string sessionId, string requestId, CancellationToken cancellationToken)
-        {
-            ValidateId(requestId);
-            return SendAsync<SaveTransferStatus>(HttpMethod.Get,
-                SessionPath(sessionId) + "/save-requests/" + requestId, null, cancellationToken);
-        }
-
         public Task<ExportHandoffStatus> StartExportAsync(string sessionId, CancellationToken ct) =>
             RecoverHandoffAsync(sessionId, true, ct);
 
         public Task<ExportHandoffStatus> GetExportAsync(string sessionId, CancellationToken ct) =>
             RecoverHandoffAsync(sessionId, false, ct);
+        public Task<PendingSaveRecovery[]> GetRecoveriesAsync(CancellationToken ct) =>
+            SendAsync<PendingSaveRecovery[]>(HttpMethod.Get, "v1/holeinone/recovery", null, ct);
 
         private async Task<ExportHandoffStatus> RecoverHandoffAsync(string sessionId, bool start, CancellationToken ct)
         {
@@ -233,10 +171,12 @@ namespace Playnite.HoleInOne
 
         private async Task PostEmptyAsync(string path, object body, CancellationToken ct)
         {
+            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
             using (var request = new HttpRequestMessage(HttpMethod.Post, path))
             {
+                timeout.CancelAfter(TimeSpan.FromSeconds(20));
                 if (body != null) request.Content = new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json");
-                using (var response = await client.SendAsync(request, ct).ConfigureAwait(false))
+                using (var response = await client.SendAsync(request, timeout.Token).ConfigureAwait(false))
                 {
                     if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                     {
@@ -244,7 +184,7 @@ namespace Playnite.HoleInOne
                         throw new LoginRequiredException("로그인이 만료되었습니다. 다시 로그인해 주세요.");
                     }
                     if (response.StatusCode == System.Net.HttpStatusCode.NotFound && path.EndsWith("/stop", StringComparison.Ordinal)) return;
-                    if (!response.IsSuccessStatusCode) throw new HttpRequestException("홀인원 Backend 요청 실패: HTTP " + (int)response.StatusCode);
+                    await RequireSuccessAsync(response, "POST", path).ConfigureAwait(false);
                 }
             }
         }
@@ -291,7 +231,13 @@ namespace Playnite.HoleInOne
             int? status = null;
             try
             {
-                return await SendCoreAsync<T>(method, path, body, cancellationToken, value => status = value).ConfigureAwait(false);
+                using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                {
+                    var seconds = path == "health" ? 12 : path.Contains("/auth/") ? 30 :
+                        path.EndsWith("/prepare", StringComparison.Ordinal) || path.EndsWith("/play", StringComparison.Ordinal) ? 40 : 20;
+                    timeout.CancelAfter(TimeSpan.FromSeconds(seconds));
+                    return await SendCoreAsync<T>(method, path, body, timeout.Token, value => status = value).ConfigureAwait(false);
+                }
             }
             catch (Exception error)
             {
@@ -330,64 +276,8 @@ namespace Playnite.HoleInOne
 
                 using (var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false))
                 {
-                    if (!response.IsSuccessStatusCode && (path == "v1/holeinone/sessions/prepare" || (path.EndsWith("/play", StringComparison.Ordinal) || path.EndsWith("/connect-only", StringComparison.Ordinal))))
-                    {
-                        var errorBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        BackendError detail = null;
-                        try { if (errorBody.Length < 4096) detail = JsonConvert.DeserializeObject<BackendError>(errorBody); } catch (JsonException) { }
-                        if (detail?.ErrorCode != null && (detail.ErrorCode.StartsWith("steam_", StringComparison.Ordinal) || detail.ErrorCode == "https_required"))
-                            throw new SteamLinkException(detail.ErrorCode);
-                    }
                     recordStatus((int)response.StatusCode);
-                    if (response.StatusCode == System.Net.HttpStatusCode.NotFound && path.EndsWith("/connect-only", StringComparison.Ordinal))
-                        throw new DeferredLaunchUnavailableException();
-                    // Do not include response bodies or authentication values in error messages.
-                    if (path == "v1/holeinone/sessions/prepare" &&
-                        (response.StatusCode == System.Net.HttpStatusCode.NotFound || response.StatusCode == System.Net.HttpStatusCode.Conflict))
-                        throw new PrewarmingUnavailableException();
-                    if ((response.StatusCode == System.Net.HttpStatusCode.Gone || (response.StatusCode == System.Net.HttpStatusCode.NotFound && (path.EndsWith("/play", StringComparison.Ordinal) || path.EndsWith("/connect-only", StringComparison.Ordinal)))) &&
-                            (path == "v1/holeinone/sessions/prepare" || path.EndsWith("/play", StringComparison.Ordinal) || path.EndsWith("/connect-only", StringComparison.Ordinal)))
-                        throw new PreparedSessionExpiredException();
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        if (path == "v1/holeinone/auth/register" && (int)response.StatusCode < 500)
-                            throw new LoginRequiredException(response.StatusCode == System.Net.HttpStatusCode.Conflict ? "이미 사용 중인 아이디입니다. 다른 아이디를 입력하거나 로그인해 주세요." :
-                                (int)response.StatusCode == 429 ? "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." :
-                                response.StatusCode == System.Net.HttpStatusCode.BadRequest ? "아이디는 영문·숫자·밑줄·하이픈 3~32자, 비밀번호는 12~256자로 입력해 주세요." : "현재 회원가입을 이용할 수 없습니다.");
-                        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                            throw new LoginRequiredException(path.EndsWith("/auth/login", StringComparison.Ordinal)
-                                ? "아이디 또는 비밀번호가 올바르지 않습니다." : "로그인이 만료되었습니다. 다시 로그인해 주세요.");
-                        if ((int)response.StatusCode == 429)
-                            throw new HttpRequestException("로그인 시도가 너무 많습니다. 5분 후 다시 시도해 주세요.");
-                        if (method == HttpMethod.Post && path == "v1/holeinone/sessions" &&
-                            (response.StatusCode == System.Net.HttpStatusCode.NotFound ||
-                             response.StatusCode == System.Net.HttpStatusCode.Conflict ||
-                             response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable))
-                        {
-                            BackendError details = null;
-                            try { details = JsonConvert.DeserializeObject<BackendError>(await response.Content.ReadAsStringAsync().ConfigureAwait(false)); }
-                            catch (JsonException) { } // Proxies may return HTML or a non-object JSON response.
-                            if (details?.ErrorCode == "game_not_supported" || details?.ErrorCode == "game_not_configured" ||
-                                (string.IsNullOrEmpty(details?.ErrorCode) && details?.Error == "This game has no configured cloud application."))
-                                throw new CloudPlayUnavailableException("이 게임은 현재 클라우드 플레이를 지원하지 않음. 설치 버튼으로 PC에 설치한 뒤 플레이할 수 있음.");
-                            if (details?.ErrorCode == "game_not_ready")
-                                throw new CloudPlayUnavailableException("이 게임은 현재 클라우드에서 실행할 수 없는 상태임. 게임 준비를 기다리지 않고 요청을 종료함.");
-                            if (details?.ErrorCode == "game_catalog_unavailable")
-                                throw new CloudPlayUnavailableException("클라우드 지원 게임 목록을 확인할 수 없음. 서버 연결 및 조회 권한 확인 필요.");
-                            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-                                throw new HttpRequestException("클라우드 플레이 요청 경로를 찾을 수 없음(HTTP 404). 서버 주소와 Backend 버전을 확인해야 함.");
-                        }
-                        if (path.EndsWith("/export-handoff", StringComparison.Ordinal) && response.StatusCode == System.Net.HttpStatusCode.Conflict)
-                        {
-                            // Only map known error codes; never surface raw response bodies or secrets.
-                            var details = JsonConvert.DeserializeObject<ExportHandoffStatus>(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
-                            if (details?.ErrorCode == "export_not_configured") throw new InvalidOperationException("클라우드 세이브 전환 설정이 아직 준비되지 않음.");
-                            if (details?.ErrorCode == "baseline_unverified") throw new InvalidOperationException("클라우드의 기존 세이브 구성을 먼저 확인해야 함.");
-                            throw new InvalidOperationException("이 게임의 세이브 저장 위치 또는 클라우드 전환 조건을 확인해야 함.");
-                        }
-                        throw new BackendRequestException((int)response.StatusCode, method.Method, path);
-                    }
-
+                    await RequireSuccessAsync(response, method.Method, path).ConfigureAwait(false);
                     var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                     cancellationToken.ThrowIfCancellationRequested();
                     var result = JsonConvert.DeserializeObject<T>(text);
@@ -401,6 +291,39 @@ namespace Playnite.HoleInOne
             }
         }
 
+        private static async Task RequireSuccessAsync(HttpResponseMessage response, string method, string path)
+        {
+            if (response.IsSuccessStatusCode) return;
+            var status = (int)response.StatusCode;
+            var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            string code = null;
+            try { if (text.Length < 4096) code = JsonConvert.DeserializeObject<BackendError>(text)?.ErrorCode; }
+            catch (JsonException) { } // Proxies can return HTML or non-object JSON.
+            if (status == 401)
+                throw new LoginRequiredException(path.EndsWith("/auth/login", StringComparison.Ordinal)
+                    ? "아이디 또는 비밀번호가 올바르지 않습니다." : "로그인이 만료되었습니다. 다시 로그인해 주세요.");
+            if (code != null && (code.StartsWith("steam_", StringComparison.Ordinal) || code == "https_required"))
+                throw new SteamLinkException(code);
+            if (status == 429)
+                throw new BackendRequestException(status, method, path, code, code == "login_rate_limited"
+                    ? "로그인 시도가 너무 많습니다. 5분 후 다시 시도해 주세요."
+                    : "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
+            if (path == "v1/holeinone/auth/register" && status < 500)
+                throw new LoginRequiredException(status == 409 ? "이미 사용 중인 아이디입니다. 다른 아이디를 입력하거나 로그인해 주세요."
+                    : status == 400 ? "아이디는 영문·숫자·밑줄·하이픈 3~32자, 비밀번호는 8~256자로 입력해 주세요." : "현재 회원가입을 이용할 수 없습니다.");
+            var preparation = path == "v1/holeinone/sessions/prepare";
+            var play = path.EndsWith("/play", StringComparison.Ordinal);
+            if ((preparation || play) && (status == 410 || (play && status == 404)))
+                throw new PreparedSessionExpiredException();
+            if (preparation && status == 404) throw new PrewarmingUnavailableException();
+            if ((preparation || play) && (code == "prepared_game_mismatch" || code == "game_not_supported" || code == "game_not_configured"))
+                throw new CloudPlayUnavailableException("이 게임은 현재 클라우드 플레이를 지원하지 않습니다. PC에 설치한 뒤 플레이해 주세요.");
+            if (path.EndsWith("/export-handoff", StringComparison.Ordinal) && status == 409)
+                throw new BackendRequestException(status, method, path, code, code == "baseline_unverified"
+                    ? "클라우드의 기존 세이브 구성을 먼저 확인해야 합니다."
+                    : "이 게임의 세이브 저장 위치 또는 클라우드 전환 조건을 확인해 주세요.");
+            throw new BackendRequestException(status, method, path, code);
+        }
         private static string SessionPath(string sessionId)
         {
             ValidateId(sessionId);
@@ -464,20 +387,25 @@ namespace Playnite.HoleInOne
         public string ErrorCode { get; set; }
     }
 
-    internal sealed class BackendRequestException : HttpRequestException
+    public sealed class BackendRequestException : HttpRequestException
     {
         public int Status { get; }
-        public BackendRequestException(int status, string method, string path)
-            : base("홀인원 Backend 요청 실패: HTTP " + status)
-        { Status = status; Data["Method"] = method; Data["Path"] = path; }
+        public string ErrorCode { get; }
+        public BackendRequestException(int status, string method, string path, string code = null, string message = null)
+            : base(message ?? "홀인원 Backend 요청 실패: HTTP " + status)
+        { Status = status; ErrorCode = code; Data["HioHttpStatus"] = status; Data["Method"] = method; Data["Path"] = path; }
     }
 
+    public sealed class PendingSaveRecovery
+    {
+        public string SessionId { get; set; }
+        public ExportHandoffStatus Transfer { get; set; }
+    }
     public sealed class CloudSession
     {
         public string SessionId { get; set; }
         public string GameId { get; set; }
         public string StreamUrl { get; set; }
-        public bool LaunchDeferred { get; set; }
     }
 
     public sealed class ExportHandoffStatus
@@ -501,6 +429,8 @@ namespace Playnite.HoleInOne
                 FailureStage == "download_export" ? "S3 파일 다운로드" :
                 FailureStage == "prepare_saves" ? "세이브 파일 준비" : "세이브 전환";
             var reason = ErrorCode == "export_timeout" ? "처리 시간이 초과됨." :
+                ErrorCode == "recovery_required" ? "서버 재시작 전 작업의 복구 확인이 필요함. 새 내보내기를 시작하지 않았음." :
+                ErrorCode == "service_stopping" ? "서버가 종료되어 전환이 중단됨. 다시 로그인한 뒤 기존 요청을 확인해야 함." :
                 ErrorCode == "export_already_reserved" ? "이미 예약된 파일 내보내기의 저장 위치를 확인할 수 없어 전환을 중단함. 반복 시도 대신 세이브 복구가 필요함." :
                 ErrorCode == "export_not_configured" ? "클라우드 세이브 전환 설정이 아직 준비되지 않음." :
                 ErrorCode == "baseline_unverified" ? "클라우드 세이브 초기 상태 확인이 필요함." :
@@ -513,36 +443,4 @@ namespace Playnite.HoleInOne
         }
     }
 
-    public sealed class CampfireEvent
-    {
-        public long Sequence { get; set; }
-        public CampfireNotice Notice { get; set; }
-    }
-
-    public sealed class CampfireNotice
-    {
-        public string RunId { get; set; }
-    }
-
-    public sealed class SaveTransferStatus
-    {
-        public string RequestId { get; set; }
-        public string RunId { get; set; }
-        public string Status { get; set; }
-        public TransferTicket Ticket { get; set; }
-    }
-
-    public sealed class TransferTicket
-    {
-        [JsonProperty("backendUrl")]
-        public string BackendUrl { get; set; }
-        [JsonProperty("sessionId")]
-        public string SessionId { get; set; }
-        [JsonProperty("requestId")]
-        public string RequestId { get; set; }
-        [JsonProperty("runId")]
-        public string RunId { get; set; }
-        [JsonProperty("bearerToken")]
-        public string BearerToken { get; set; }
-    }
 }

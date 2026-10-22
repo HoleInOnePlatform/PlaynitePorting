@@ -14,6 +14,11 @@ namespace Playnite.HoleInOne
     public static class SteamLinkContext
     {
         private static string accountId, address, bearer;
+        private static readonly object stateGate = new object();
+        private static long generation;
+        public static long Generation => Interlocked.Read(ref generation);
+        public static void RequireGeneration(long expected)
+        { if (Generation != expected || !IsConfigured) throw new OperationCanceledException("로그인 계정이 변경되었습니다."); }
         public static SteamLinkInfo Current { get; private set; }
         public static bool IsConfigured => accountId != null;
         public static string DirectoryPath
@@ -40,21 +45,24 @@ namespace Playnite.HoleInOne
         }
         public static void Configure(string backendUrl, string owner, string token)
         {
-            Forget(); BackendConnection.ValidateId(owner);
+            BackendConnection.ValidateId(owner);
             if (BackendConnection.ValidateAddress(backendUrl).Scheme != "https") throw new SteamLinkException("https_required");
-            accountId = owner; address = backendUrl; bearer = token;
+            lock (stateGate) { Forget(); accountId = owner; address = backendUrl; bearer = token; }
         }
         public static BackendConnection Backend() => new BackendConnection(address, bearer);
         public static async Task<SteamLinkInfo> RefreshAsync(CancellationToken ct)
         {
             if (!IsConfigured) throw new LoginRequiredException("HoleInOne 로그인이 필요합니다.");
-            var captured = accountId;
+            var captured = Interlocked.Read(ref generation);
             using (var backend = Backend())
             {
                 var info = await backend.GetSteamLinkAsync(ct).ConfigureAwait(false);
-                if (accountId != captured) throw new OperationCanceledException();
-                Current = info;
-                if (!info.IsLinked) DeleteLocal();
+                lock (stateGate)
+                {
+                    if (Interlocked.Read(ref generation) != captured) throw new OperationCanceledException();
+                    Current = info;
+                    if (!info.IsLinked) DeleteLocal();
+                }
                 return info;
             }
         }
@@ -69,7 +77,7 @@ namespace Playnite.HoleInOne
             if (!IsConfigured) return;
             foreach (var file in new[] { TokenPath, Path.Combine(DirectoryPath,"link.json") }) if (File.Exists(file)) File.Delete(file);
         }
-        public static void Forget() { accountId = address = bearer = null; Current = null; }
+        public static void Forget() { lock (stateGate) { Interlocked.Increment(ref generation); accountId = address = bearer = null; Current = null; } }
         public static void OpenLocalSteam()
         {
             var root = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) as string;
@@ -82,7 +90,7 @@ namespace Playnite.HoleInOne
         public static void RequireLocalAccount()
         {
             var expected = Current?.IsLinked == true ? Current.SteamId : null;
-            if (expected != null && SteamCloudBridge.ActiveSteamId() != expected)
+            if (expected != null && LocalSteamAccount.RequireSteamId() != expected)
                 throw new InvalidOperationException("PC Steam 계정이 HoleInOne에 연결한 계정과 다릅니다. Steam에서 같은 계정으로 로그인한 후 다시 시도해 주세요.");
         }
     }

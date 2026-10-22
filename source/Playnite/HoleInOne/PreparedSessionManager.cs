@@ -10,18 +10,12 @@ namespace Playnite.HoleInOne
         public string GameId { get; set; }
         public DateTimeOffset ExpiresAt { get; set; }
     }
-    public sealed class PrewarmingUnavailableException : Exception { }
+    public sealed class PrewarmingUnavailableException : Exception { public PrewarmingUnavailableException() : base("서버의 V5 준비 계약을 확인할 수 없습니다. 앱과 Backend 버전을 확인해 주세요.") { } }
     public sealed class PreparedSessionExpiredException : Exception { }
-    public sealed class DeferredLaunchUnavailableException : Exception { }
-    public interface IDeferredPreparedSessionBackend
-    {
-        Task<CloudSession> ConnectPreparedSessionAsync(string sessionId, string gameId, CancellationToken ct);
-    }
     public interface IPreparedSessionBackend
     {
         Task<PreparedCloudSession> PrepareSessionAsync(string requestId, CancellationToken ct);
         Task<CloudSession> PlayPreparedSessionAsync(string sessionId, string gameId, CancellationToken ct);
-        Task<CloudSession> CreateSessionAsync(CancellationToken ct, string gameId = null);
         Task StopCloudAsync(string sessionId, CancellationToken ct);
     }
 
@@ -38,24 +32,21 @@ namespace Playnite.HoleInOne
         public string TimingId => timing.Id;
         private string requestId = Guid.NewGuid().ToString("N");
         private PreparedCloudSession prepared;
-        private bool unsupported;
-        private readonly bool requirePreparation;
         private bool closed;
         private bool claimed;
-        public PreparedSessionManager(IPreparedSessionBackend backend, Func<DateTimeOffset> now = null, bool requirePreparation = false, Action<string> log = null)
-        { this.requirePreparation = requirePreparation; timing = new PerformanceTrace("session_preparation", log); this.log = log; this.backend = backend; this.now = now ?? (() => DateTimeOffset.UtcNow); }
+        public PreparedSessionManager(IPreparedSessionBackend backend, Func<DateTimeOffset> now = null, Action<string> log = null)
+        { timing = new PerformanceTrace("session_preparation", log); this.log = log; this.backend = backend; this.now = now ?? (() => DateTimeOffset.UtcNow); }
 
         private async Task PrepareCoreAsync(CancellationToken ct)
         {
             if (closed) throw new OperationCanceledException();
-            if (prepared != null || unsupported) return;
+            if (prepared != null) return;
             try { prepared = await timing.RunAsync("prepare_api", () => backend.PrepareSessionAsync(requestId, ct)).ConfigureAwait(false); }
             catch (Exception error)
             {
                 try { log?.Invoke("[HIO-PREPARE-ERROR] trace=" + timing.Id + " stage=prepare_api " + BackendConnection.DescribeFailure(error, ct)); }
-                catch { } // Logging must not change retry or fallback behavior.
-                if (error is PrewarmingUnavailableException && !requirePreparation) unsupported = true;
-                else throw;
+                catch { } // Logging must not change preparation or retry behavior.
+                throw;
             }
         }
         public async Task PrepareAsync(CancellationToken ct)
@@ -111,22 +102,8 @@ namespace Playnite.HoleInOne
                     try
                     {
                         await PrepareCoreAsync(ct).ConfigureAwait(false);
-                        if (unsupported)
-                        {
-                            ct.ThrowIfCancellationRequested();
-                            var legacy = await timing.RunAsync("legacy_create_api", () => backend.CreateSessionAsync(ct, gameId)).ConfigureAwait(false);
-                            claimed = true;
-                            return legacy;
-                        }
                         if (prepared.GameId != gameId)
-                        {
-                            if (requirePreparation) throw new InvalidOperationException("이 게임은 사용자별 클라우드 준비를 아직 지원하지 않습니다.");
-                            await ReleaseCoreAsync(ct).ConfigureAwait(false);
-                            ct.ThrowIfCancellationRequested();
-                            var legacy = await timing.RunAsync("legacy_create_api", () => backend.CreateSessionAsync(ct, gameId)).ConfigureAwait(false);
-                            claimed = true;
-                            return legacy;
-                        }
+                            throw new CloudPlayUnavailableException("이 게임은 사용자별 클라우드 준비를 아직 지원하지 않습니다.");
                         if (prepared.ExpiresAt <= now()) throw new PreparedSessionExpiredException();
                         ct.ThrowIfCancellationRequested();
                         var session = await timing.RunAsync("play_api", () => backend.PlayPreparedSessionAsync(prepared.SessionId, gameId, ct)).ConfigureAwait(false);
