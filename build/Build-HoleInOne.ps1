@@ -30,6 +30,8 @@ foreach ($project in @('Playnite.DesktopApp', 'Playnite.BrowserProcess')) {
         "/p:OutputPath=$outputDirectory" "/p:HoleInOneDistribution=$($Distribution.IsPresent.ToString().ToLowerInvariant())" /p:AppendTargetFrameworkToOutputPath=false /p:AppendRuntimeIdentifierToOutputPath=false
     if ($LASTEXITCODE -ne 0) { throw "$project 빌드 실패: $LASTEXITCODE" }
 }
+& (Join-Path $PSScriptRoot 'Build-SteamCloudBridge.ps1') -Configuration $Configuration -OutputDirectory (Join-Path $outputDirectory 'Tools/SteamCloud')
+& (Join-Path $PSScriptRoot 'Build-SteamLink.ps1') -Configuration $Configuration -OutputDirectory (Join-Path $outputDirectory 'Tools/SteamLink')
 Write-Host "빌드 완료: $outputDirectory/HoleInOne.exe"
 if ($ServiceUrl) {
     @{ BackendUrl = $serviceAddress.AbsoluteUri.TrimEnd('/') + '/' } | ConvertTo-Json |

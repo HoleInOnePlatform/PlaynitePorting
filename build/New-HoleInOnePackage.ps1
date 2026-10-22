@@ -17,7 +17,10 @@ foreach ($file in @('HoleInOne.exe', 'HoleInOne.BrowserProcess.exe', 'Playnite.d
 foreach ($name in @('UserData', 'ExtensionsData', 'holeinone.development-address.json', 'appsettings.Auth.json', 'appsettings.Local.json')) {
     if (Test-Path -LiteralPath (Join-Path $source $name)) { throw "개인 데이터 포함: $name" }
 }
-if (Get-ChildItem -LiteralPath $source -Recurse -File -Filter '*.pem') { throw 'SSH 키는 배포할 수 없음.' }
+if (Get-ChildItem -LiteralPath $source -Recurse -Force | Where-Object {
+    ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+    $_.Extension -in @('.pem','.hioauth') -or $_.Name -in @('AuthStateImport','login.dat','local.vdf','local.vdf.orig','loginusers.vdf','token_plaintext.bin','token_meta.json') -or $_.Name -like 'ssfn*'
+}) { throw '인증 자료, 키 또는 링크가 포함되어 있습니다. 깨끗한 빌드 폴더만 배포하세요.' }
 if ($OutputZip) {
     $archive = [IO.Path]::GetFullPath($OutputZip)
     if (Test-Path -LiteralPath $archive) { throw '기존 ZIP을 덮어쓰지 않음.' }

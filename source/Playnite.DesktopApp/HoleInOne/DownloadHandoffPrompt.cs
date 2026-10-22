@@ -13,6 +13,8 @@ namespace Playnite.DesktopApp.HoleInOne
         private readonly Window window;
         private readonly Panel host;
         private readonly Border banner;
+        private Border transferScreen;
+        private TextBlock transferStatus;
         private readonly TextBlock remaining;
         private readonly TextBlock status;
         private readonly Button transfer;
@@ -73,6 +75,23 @@ namespace Playnite.DesktopApp.HoleInOne
 
         public void SetBusy(bool busy, string message)
         {
+            if (!busy && transferScreen != null)
+            {
+                host.Children.Remove(transferScreen);
+                transferScreen = null;
+                transferStatus = null;
+            }
+            if (busy && transferScreen == null)
+            {
+                transferStatus = new TextBlock { Foreground = Brushes.White, FontSize = 20, TextWrapping = TextWrapping.Wrap,
+                    MaxWidth = 620, Margin = new Thickness(32), HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center };
+                transferScreen = new Border { Background = new SolidColorBrush(Color.FromRgb(17, 24, 39)),
+                    Child = transferStatus, Focusable = true };
+                host.Children.Insert(host.Children.IndexOf(banner), transferScreen);
+                transferScreen.Focus();
+            }
+            if (transferStatus != null) transferStatus.Text = "로컬 게임으로 전환\n\n" + message + "\n\n완료될 때까지 이 창을 열어 두세요.";
             transfer.IsEnabled = !busy && !deadline.HasExpired(utcNow());
             transfer.Content = busy ? "전환 중…" : "전환";
             status.Text = message;
@@ -112,6 +131,7 @@ namespace Playnite.DesktopApp.HoleInOne
             transfer.Click -= TransferClicked;
             window.Closed -= WindowClosed;
             host.Children.Remove(banner);
+            if (transferScreen != null) host.Children.Remove(transferScreen);
         }
     }
 }

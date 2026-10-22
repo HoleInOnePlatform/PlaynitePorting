@@ -17,6 +17,8 @@ async Task Reject(Func<Task> action, string name)
     throw new Exception("Expected rejection: " + name);
 }
 var token = CancellationToken.None;
+LocalDownloadChecks.Run(Check);
+await HandoffRecoveryChecks.RunAsync(Check);
 await PerformanceChecks.RunAsync(Check);
 await ReceiptChecks.RunAsync(Check);
 using var wire = new FakeBackend();
@@ -146,6 +148,7 @@ try
 }
 finally { Directory.Delete(root, true); }
 await PrewarmChecks.RunAsync(Check);
+await SteamLinkChecks.RunAsync(Check);
 StoreChecks.Run(Check);
 LauncherSettingsChecks.Run(Check);
 StorageChecks.Run(Check);

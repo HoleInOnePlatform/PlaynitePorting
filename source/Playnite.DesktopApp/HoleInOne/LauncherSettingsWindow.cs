@@ -39,7 +39,7 @@ namespace Playnite.DesktopApp.HoleInOne
                             await backend.LogoutAsync(CancellationToken.None);
                         LauncherLogin.Forget(); Close();
                         if (!LauncherLogin.EnsureSignedIn(settings)) Application.Current.Shutdown();
-                        else CloudPreparation.Begin();
+                        else { await SteamSetup.OnStartupAsync(); CloudPreparation.Begin(); }
                     }
                     catch (Exception)
                     {
@@ -51,7 +51,25 @@ namespace Playnite.DesktopApp.HoleInOne
             AddDevelopmentServerSettings(panel);
             AddStorageSettings(panel);
             AddProtectedGamesSettings(panel);
-            AddStoreSettings(panel, "Steam 연동 설정", BuiltinStoreLibrary.SteamId);
+            if (LauncherSettings.Load().RequireLogin)
+            {
+                var steam = new Button { Content="Steam 연결 관리", Margin=new Thickness(0,6,0,6) };
+                steam.Click+=(sender,args)=>new SteamSetupWindow { Owner=this }.ShowDialog(); panel.Children.Add(steam);
+                var saves=new CheckBox { Content="전환할 때 Steam Cloud에도 세이브 업로드", IsChecked=LauncherSettings.Load().SteamCloudUploadEnabled, Margin=new Thickness(0,6,0,12) };
+                panel.Children.Add(saves);
+                RoutedEventHandler changed=(sender,args)=>{
+                    var settings=LauncherSettings.Load();
+                    if(InstantPlayCoordinator.ActiveStreamCount!=0 || (saves.IsChecked==true && !SteamLinkContext.HasLocalLogin))
+                    { MessageBox.Show("클라우드 이용을 종료하고 이 PC에서 Steam을 연결한 후 변경해 주세요.",Title); saves.IsChecked=settings.SteamCloudUploadEnabled; return; }
+                    settings.SteamCloudUploadEnabled=saves.IsChecked==true; settings.Save();
+                };
+                saves.Checked+=changed; saves.Unchecked+=changed;
+            }
+            else
+            {
+                AddStoreSettings(panel, "Steam 연동 설정", BuiltinStoreLibrary.SteamId);
+                AddSteamCloudSettings(panel);
+            }
             AddStoreSettings(panel, "Epic 연동 설정", BuiltinStoreLibrary.EpicId);
             panel.Children.Add(new TextBlock
             {
@@ -170,6 +188,84 @@ namespace Playnite.DesktopApp.HoleInOne
             };
             refresh.Click += (sender, args) => reload();
             reload();
+        }
+
+        private void AddSteamCloudSettings(Panel panel)
+        {
+            var enabled = new CheckBox { Content = "전환할 때 Steam Cloud에도 세이브 업로드 (시험 기능)",
+                IsChecked = LauncherSettings.Load().SteamCloudUploadEnabled, Margin = new Thickness(0, 12, 0, 6) };
+            panel.Children.Add(enabled);
+            var status = new TextBlock { Text = SteamCloudBridge.IsLinked ? "Steam 세이브 계정 연결됨" : "사용하려면 Steam 세이브 계정을 연결해 주세요.",
+                TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 8) };
+            var connect = new Button { Content = "Steam 세이브 계정 연결", Margin = new Thickness(0, 0, 8, 0) };
+            var unlink = new Button { Content = "연결 해제" };
+            var actions = new StackPanel { Orientation = Orientation.Horizontal };
+            actions.Children.Add(connect); actions.Children.Add(unlink); panel.Children.Add(actions); panel.Children.Add(status);
+            var changing = false;
+            RoutedEventHandler save = (sender, args) =>
+            {
+                if (changing) return;
+                try
+                {
+                    if (InstantPlayCoordinator.ActiveStreamCount != 0) throw new InvalidOperationException("클라우드 게임 창을 닫은 뒤 변경해 주세요.");
+                    if (enabled.IsChecked == true && !SteamCloudBridge.IsLinked) throw new InvalidOperationException("먼저 Steam 세이브 계정을 연결해 주세요.");
+                    var settings = LauncherSettings.Load(); settings.SteamCloudUploadEnabled = enabled.IsChecked == true; settings.Save();
+                    status.Text = settings.SteamCloudUploadEnabled ? "다음 클라우드 게임부터 적용됨. Steam Cloud의 파일도 변경되며, 문제가 있으면 전환을 보류함." : "Steam 세이브 자동 업로드 꺼짐";
+                }
+                catch (Exception error)
+                {
+                    status.Text = error.Message; changing = true;
+                    enabled.IsChecked = LauncherSettings.Load().SteamCloudUploadEnabled; changing = false;
+                }
+            };
+            enabled.Checked += save; enabled.Unchecked += save;
+            connect.Click += async (sender, args) =>
+            {
+                if (InstantPlayCoordinator.ActiveStreamCount != 0) { status.Text = "클라우드 게임 창을 닫은 뒤 연결해 주세요."; return; }
+                connect.IsEnabled = unlink.IsEnabled = enabled.IsEnabled = false;
+                using (var cancel = new CancellationTokenSource())
+                {
+                    var dialog = new Playnite.Controls.WindowBase { Title = "Steam 세이브 계정 연결", Width = 360, Height = 430,
+                        Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowMinimizeButton = false, ShowMaximizeButton = false };
+                    dialog.SetResourceReference(StyleProperty, "StandardWindowStyle");
+                    var body = new StackPanel { Margin = new Thickness(20) };
+                    body.Children.Add(new TextBlock { Text = "Steam 모바일 앱으로 QR을 스캔해 현재 PC와 같은 계정으로 로그인해 주세요.", TextWrapping = TextWrapping.Wrap });
+                    var picture = new Image { Width = 260, Height = 260, Margin = new Thickness(0, 16, 0, 0) };
+                    body.Children.Add(picture); dialog.Content = body;
+                    dialog.Closed += (s, e) => cancel.Cancel();
+                    try
+                    {
+                        using (var bridge = new SteamCloudBridge())
+                        {
+                            dialog.Show();
+                            await bridge.AuthenticateAsync(bytes =>
+                            {
+                                using (var memory = new MemoryStream(bytes))
+                                {
+                                    var bitmap = new System.Windows.Media.Imaging.BitmapImage(); bitmap.BeginInit();
+                                    bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                                    bitmap.StreamSource = memory; bitmap.EndInit(); bitmap.Freeze(); picture.Source = bitmap;
+                                }
+                            }, cancel.Token);
+                        }
+                        status.Text = "계정 연결 완료. 자동 업로드를 사용하려면 위 옵션을 켜 주세요.";
+                    }
+                    catch (OperationCanceledException) { status.Text = "계정 연결 취소됨"; }
+                    catch (Exception error) { status.Text = error.Message; }
+                    finally { dialog.Close(); connect.IsEnabled = unlink.IsEnabled = enabled.IsEnabled = true; }
+                }
+            };
+            unlink.Click += (sender, args) =>
+            {
+                if (InstantPlayCoordinator.ActiveStreamCount != 0) { status.Text = "클라우드 게임 창을 닫은 뒤 연결을 해제해 주세요."; return; }
+                try
+                {
+                    enabled.IsChecked = false;
+                    if (File.Exists(SteamCloudBridge.TokenPath)) File.Delete(SteamCloudBridge.TokenPath);
+                    status.Text = "이 PC에 저장된 Steam 세이브 연결 정보 삭제 완료";
+                }
+                catch (Exception) { status.Text = "연결 정보를 삭제하지 못함. 잠시 후 다시 시도해 주세요."; }
+            };
         }
 
         private void AddDevelopmentServerSettings(Panel panel)

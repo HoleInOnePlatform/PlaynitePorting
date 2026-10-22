@@ -4,6 +4,8 @@
 # Built team packages may contain a shared development token.
 artifacts/
 holeinone.development.json
+*.hioauth
+steam-probe-result*.json
 
 [Originals]/
 

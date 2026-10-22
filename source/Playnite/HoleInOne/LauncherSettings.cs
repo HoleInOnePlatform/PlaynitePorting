@@ -8,6 +8,7 @@ namespace Playnite.HoleInOne
 {
     public sealed class LauncherSettings
     {
+        public bool SteamCloudUploadEnabled { get; set; }
         public string BackendUrl { get; set; } = "http://127.0.0.1:5010/";
         public string BearerToken { get; set; }
         public bool RequireLogin { get; set; }
@@ -31,7 +32,7 @@ namespace Playnite.HoleInOne
 
         private static string DefaultSteamDirectory()
         {
-            using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam"))
+            using (var key = Microsoft.Win32.Registry.CurrentUser?.OpenSubKey(@"Software\Valve\Steam"))
                 return Path.Combine(key?.GetValue("SteamPath") as string ?? Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam"), "steamapps", "common");
         }

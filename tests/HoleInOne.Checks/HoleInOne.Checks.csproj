@@ -12,6 +12,10 @@
     <Compile Include="ReceiptChecks.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/ExportReceiptOutbox.cs" Link="ExportReceiptOutbox.cs" />
     <Compile Include="PrewarmChecks.cs" />
+    <Compile Include="SteamLinkChecks.cs" />
+    <Compile Include="LocalDownloadChecks.cs" />
+    <Compile Include="HandoffRecoveryChecks.cs" />
+    <Compile Include="../../source/Playnite/HoleInOne/LocalDownloadSession.cs" Link="LocalDownloadSession.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/PreparedSessionManager.cs" Link="PreparedSessionManager.cs" />
     <Compile Include="StoreChecks.cs" />
     <Compile Include="LauncherSettingsChecks.cs" />
@@ -24,6 +28,7 @@
     <Compile Include="../../source/Playnite/HoleInOne/Sts2ModSetup.cs" Link="Sts2ModSetup.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/StoreFiles.cs" Link="StoreFiles.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/BackendConnection.cs" Link="BackendConnection.cs" />
+    <Compile Include="../../source/Playnite/HoleInOne/SteamLinkConnection.cs" Link="SteamLinkConnection.cs" />
     <Compile Include="../../source/Playnite/HoleInOne/HandoffSession.cs" Link="HandoffSession.cs" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>

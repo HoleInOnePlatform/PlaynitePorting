@@ -226,6 +226,7 @@ namespace Playnite.DesktopApp
                 CurrentNative.Shutdown(); return;
             }
 
+            await HoleInOne.SteamSetup.OnStartupAsync();
             HoleInOne.CloudPreparation.Begin();
             CurrentNative.Exit += (sender, args) => HoleInOne.CloudPreparation.Shutdown();
 

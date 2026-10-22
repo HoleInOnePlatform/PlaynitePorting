@@ -51,13 +51,22 @@ namespace Playnite.DesktopApp.HoleInOne
             CloudSession session = null;
             PreparedSessionManager preparation = null;
             DownloadHandoffPrompt prompt = null;
+            LocalDownloadNotice downloadNotice = null;
             Game localGame = null;
+            SteamCloudBridge steamCloud = null;
             bool cloudLaunchAllowed = false;
             try
             {
                 var key = BuiltinStoreLibrary.GameKey(game);
                 var settings = LauncherSettings.Load();
                 if (!timing.Run("ensure_login", () => LauncherLogin.EnsureSignedIn(settings))) return;
+                if (settings.RequireLogin && (!SteamLinkContext.IsConfigured || !(await SteamLinkContext.RefreshAsync(play.Closed.Token)).IsLinked)) throw new SteamLinkException("steam_link_required");
+                if (settings.SteamCloudUploadEnabled && key.StartsWith("steam-", StringComparison.Ordinal) && uint.TryParse(key.Substring(6), out var steamAppId))
+                {
+                    // Capture the remote baseline before cloud gameplay, not after the export arrives.
+                    steamCloud = new SteamCloudBridge();
+                    await steamCloud.PrepareAsync(steamAppId, play.Closed.Token);
+                }
                 backend = new BackendConnection(settings.BackendUrl, LauncherLogin.TokenFor(settings));
                 preparation = CloudPreparation.Get(settings);
                 LogManager.GetLogger().Info("[HIO-PERF] link trace=" + timing.Id + " preparation=" + preparation.TimingId);
@@ -99,22 +108,38 @@ namespace Playnite.DesktopApp.HoleInOne
                 }
                 cloudLaunchAllowed = true;
                 entryTiming.Complete();
-                using (var installationTiming = timing.Begin("local_installation_wait"))
+                Game ReadLocalGame() => editor.Database.Games.Get(game.Id) ?? throw new InvalidOperationException("라이브러리에서 게임이 제거됨.");
+                var download = new LocalDownloadSession(() => ReadLocalGame().IsInstalled, () => ReadLocalGame().IsInstalling,
+                    () => { if (key.StartsWith("steam-", StringComparison.Ordinal)) SteamLinkContext.RequireLocalAccount(); },
+                    () => editor.InstallGame(ReadLocalGame()));
+                downloadNotice = new LocalDownloadNotice(play.View.OverlayHost);
+                downloadNotice.OpenSteamRequested += (_, __) =>
                 {
-                    if (!game.IsInstalling && !game.IsInstalled) editor.InstallGame(game);
-                    while (true)
+                    try { SteamLinkContext.OpenLocalSteam(); }
+                    catch (Exception error) { downloadNotice.Show(error.Message, false); }
+                };
+                download.Request();
+                string lastNotice = null;
+                while (true)
+                {
+                    play.Closed.Token.ThrowIfCancellationRequested();
+                    game = ReadLocalGame();
+                    download.Refresh();
+                    if (download.Complete) break;
+                    if (download.Message == null) downloadNotice.Hide();
+                    else if (download.Message != lastNotice)
                     {
-                        play.Closed.Token.ThrowIfCancellationRequested();
-                        game = editor.Database.Games.Get(game.Id) ?? throw new InvalidOperationException("라이브러리에서 게임이 제거됨.");
-                        if (game.IsInstalled && !game.IsInstalling) break;
-                        // Store refreshes can briefly clear installation flags. Keep observing while
-                        // this webview is open so an early completion or a resumed download is not lost.
-                        await Task.Delay(1000, play.Closed.Token);
+                        downloadNotice.Show(download.Message, download.WaitingForAccount && key.StartsWith("steam-", StringComparison.Ordinal));
+                        LogManager.GetLogger().Info("PC download unavailable; one-time notice shown. Cloud playback continues.");
                     }
-
-                    installationTiming.Complete();
+                    lastNotice = download.Message;
+                    // Store refreshes can briefly clear installation flags. Keep observing while
+                    // this webview is open so an early completion or a resumed download is not lost.
+                    await Task.Delay(1000, play.Closed.Token);
                 }
 
+                downloadNotice.Dispose();
+                downloadNotice = null;
                 prompt = new DownloadHandoffPrompt(play.View.WindowHost, play.View.OverlayHost);
                 LogManager.GetLogger().Info("Local installation complete; handoff prompt shown for " + key);
                 var clicked = new TaskCompletionSource<bool>();
@@ -137,6 +162,7 @@ namespace Playnite.DesktopApp.HoleInOne
                         prompt.ThrowIfExpired();
                         game = editor.Database.Games.Get(game.Id) ?? throw new InvalidOperationException("라이브러리에서 게임이 제거됨.");
                         if (!game.IsInstalled || game.IsInstalling || game.IsRunning) throw new InvalidOperationException("설치가 완료되고 로컬 게임이 종료된 상태에서 전환해야 함.");
+                        prompt.SetBusy(true, "세이브 전환을 요청하는 중입니다. 연결이 잠시 끊기면 자동으로 다시 확인합니다.");
                         var status = await handoffTiming.RunAsync("request_export", () => backend.StartExportAsync(session.SessionId, play.Closed.Token));
                         if (!System.Text.RegularExpressions.Regex.IsMatch(status.RequestId ?? "", "^[a-zA-Z0-9_-]{1,128}$"))
                             throw new InvalidDataException("잘못된 세이브 전환 식별자임.");
@@ -162,6 +188,7 @@ namespace Playnite.DesktopApp.HoleInOne
                         {
                             // Save destinations and Steam identity are irrelevant when there is no save.
                             var roots = LocalRoots(game.InstallDirectory);
+                            SteamLinkContext.RequireLocalAccount();
                             var value = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam\ActiveProcess", "ActiveUser", null);
                             var account = value is int signed ? unchecked((uint)signed) : value is uint unsigned ? unsigned : 0;
                             var accountId = account == 0 ? null : account.ToString(CultureInfo.InvariantCulture);
@@ -186,6 +213,11 @@ namespace Playnite.DesktopApp.HoleInOne
                             var restore = await handoffTiming.RunAsync("validate_and_stage_saves", () => Task.Run(
                                 () => ExportSaveInstaller.Prepare(archive, key, roots, steamId, accountId, Path.Combine(work, "restore"), play.Closed.Token),
                                 play.Closed.Token));
+                            if (steamCloud != null)
+                            {
+                                prompt.SetBusy(true, "저장된 진행 상황을 준비하는 중입니다.");
+                                await steamCloud.SyncAsync(archive, status.Sha256, play.Closed.Token);
+                            }
                             prompt.ThrowIfExpired();
                             game = editor.Database.Games.Get(game.Id) ?? throw new InvalidOperationException("라이브러리에서 게임이 제거됨.");
                             if (game.IsRunning || game.IsLaunching || !game.IsInstalled || game.IsInstalling ||
@@ -209,6 +241,8 @@ namespace Playnite.DesktopApp.HoleInOne
                     catch (OperationCanceledException error) when (play.Closed.IsCancellationRequested) { handoffTotal.Fail(error); throw; }
                     catch (Exception error)
                     {
+                        LogManager.GetLogger().Warn(error, "Save handoff failed for session " + session.SessionId +
+                            "; request " + error.Data["Method"] + " " + error.Data["Path"]);
                         handoffTotal.Fail(error);
                         clicked = new TaskCompletionSource<bool>();
                         prompt.SetBusy(false, "전환 실패: " + error.Message + " 로컬 게임은 실행하지 않았습니다.");
@@ -236,6 +270,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 {
                     play.Closed.Cancel();
                     prompt?.Dispose();
+                    downloadNotice?.Dispose();
                     if (play.View != null) { play.View.WindowHost.Closed -= closed; play.View.Dispose(); }
                     active.Remove(game.Id);
                     // A manual close or timeout also requests cloud termination. Server deadline is the fallback.
@@ -246,6 +281,7 @@ namespace Playnite.DesktopApp.HoleInOne
                     }
                     if (session != null && preparation != null) await preparation.PlayFinishedAsync();
                     backend?.Dispose();
+                    steamCloud?.Dispose();
                     play.Closed.Dispose();
                     ActiveStreamCount--;
                     cleanupTiming.Complete();

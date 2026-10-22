@@ -31,7 +31,7 @@ namespace Playnite.DesktopApp.HoleInOne
             {
                 var backend = new BackendConnection(settings.BackendUrl, token);
                 current = new Context { Address = settings.BackendUrl, Token = token, Backend = backend,
-                    Sessions = new PreparedSessionManager(backend, log: line => LogManager.GetLogger().Info(line)) };
+                    Sessions = new PreparedSessionManager(backend, requirePreparation: settings.RequireLogin, log: line => LogManager.GetLogger().Info(line)) };
             }
             return current.Sessions;
         }
@@ -42,6 +42,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 var settings = LauncherSettings.Load();
                 // Startup already completed the login dialog. Do not show another dialog here.
                 if (settings.RequireLogin && string.IsNullOrEmpty(LauncherLogin.TokenFor(settings))) return;
+                if (settings.RequireLogin && (!SteamLinkContext.IsConfigured || !(await SteamLinkContext.RefreshAsync(CancellationToken.None)).IsLinked)) return;
                 new ExportReceipts(settings).Start();
                 await Get(settings).PrepareWithRetriesAsync(CancellationToken.None);
             }

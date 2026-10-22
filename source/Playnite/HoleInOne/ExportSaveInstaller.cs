@@ -28,6 +28,15 @@ namespace Playnite.HoleInOne
     // Verify and stage the entire bundle before touching live saves. Keep rollback copies on disk.
     public static class ExportSaveInstaller
     {
+        private static bool IsArchiveLink(ZipArchiveEntry entry)
+        {
+            // The net462 reference assembly predates this API; supported Windows runtimes expose it.
+            // Fail closed on an older runtime rather than silently accepting symlinks.
+            var property = typeof(ZipArchiveEntry).GetProperty("ExternalAttributes");
+            if (property == null) throw new InvalidDataException("안전한 세이브 전환을 위해 .NET Framework 4.8이 필요합니다.");
+            return (((int)property.GetValue(entry, null) >> 16) & 0xF000) == 0xA000;
+        }
+
         private sealed class Change
         {
             public string Target;
@@ -82,7 +91,7 @@ namespace Playnite.HoleInOne
                     total = checked(total + file.Size);
                     if (total > 4L * 1024 * 1024 * 1024) throw new InvalidDataException("세이브 크기 제한을 초과함.");
                     var entry = archive.GetEntry(file.Entry);
-                    if (entry == null || entry.Length != file.Size || ((entry.ExternalAttributes >> 16) & 0xF000) == 0xA000)
+                    if (entry == null || entry.Length != file.Size || IsArchiveLink(entry))
                         throw new InvalidDataException("세이브 파일 크기가 다르거나 링크가 포함됨.");
                     if (!roots.TryGetValue(file.Root ?? "", out var root)) throw new InvalidDataException("지원되지 않는 로컬 저장 위치임.");
                     var relative = file.Path ?? "";

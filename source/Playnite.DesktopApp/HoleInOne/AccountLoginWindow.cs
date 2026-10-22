@@ -28,24 +28,41 @@ namespace Playnite.DesktopApp.HoleInOne
             var username = new TextBox { MinHeight = 36, MaxLength = 128 }; panel.Children.Add(username);
             panel.Children.Add(new TextBlock { Text = "비밀번호", Margin = new Thickness(0, 16, 0, 6) });
             var password = new PasswordBox { MinHeight = 36, MaxLength = 256 }; panel.Children.Add(password);
+            var confirmationLabel = new TextBlock { Text = "비밀번호 확인", Margin = new Thickness(0, 16, 0, 6), Visibility = Visibility.Collapsed };
+            var confirmation = new PasswordBox { MinHeight = 36, MaxLength = 256, Visibility = Visibility.Collapsed };
+            panel.Children.Add(confirmationLabel); panel.Children.Add(confirmation);
+            var registering = false;
             var status = new TextBlock { TextWrapping = TextWrapping.Wrap, MinHeight = 42, Margin = new Thickness(0, 14, 0, 10) };
             panel.Children.Add(status);
             var submit = new Button { Content = "로그인", IsDefault = true, MinHeight = 42 }; panel.Children.Add(submit);
+            var mode = new Button { Content = "처음이신가요? 회원가입", MinHeight = 32, Margin = new Thickness(0, 8, 0, 0) }; panel.Children.Add(mode);
+            mode.Click += (sender, args) => {
+                registering = !registering;
+                confirmationLabel.Visibility = confirmation.Visibility = registering ? Visibility.Visible : Visibility.Collapsed;
+                submit.Content = registering ? "가입하고 시작하기" : "로그인";
+                mode.Content = registering ? "이미 계정이 있습니다 · 로그인" : "처음이신가요? 회원가입";
+                status.Text = registering ? "아이디: 영문·숫자·밑줄·하이픈 3~32자\n비밀번호: 8~256자" : "";
+                password.Clear(); confirmation.Clear(); username.Focus();
+            };
             var cancel = new Button { Content = "취소", IsCancel = true, MinHeight = 32, Margin = new Thickness(0, 8, 0, 0) }; panel.Children.Add(cancel);
             var cancellation = new CancellationTokenSource();
-            Closed += (sender, args) => { closed = true; cancellation.Cancel(); password.Clear(); };
+            Closed += (sender, args) => { closed = true; cancellation.Cancel(); password.Clear(); confirmation.Clear(); };
             Loaded += (sender, args) => username.Focus();
             submit.Click += async (sender, args) =>
             {
                 if (!submit.IsEnabled) return;
                 if (string.IsNullOrWhiteSpace(username.Text) || password.Password.Length == 0)
                 { status.Text = "아이디와 비밀번호를 입력해 주세요."; return; }
+                if (registering && (password.Password.Length < 8 || password.Password != confirmation.Password))
+                { status.Text = "8자 이상의 비밀번호를 동일하게 두 번 입력해 주세요."; return; }
+                mode.IsEnabled = confirmation.IsEnabled = false;
                 submit.IsEnabled = false; username.IsEnabled = false; password.IsEnabled = false;
-                status.Text = "로그인 중…";
+                status.Text = registering ? "가입 중…" : "로그인 중…";
                 try
                 {
                     using (var backend = new BackendConnection(backendUrl))
-                        Account = await backend.LoginAsync(username.Text.Trim(), password.Password, cancellation.Token);
+                        Account = registering ? await backend.RegisterAsync(username.Text.Trim(), password.Password, cancellation.Token)
+                            : await backend.LoginAsync(username.Text.Trim(), password.Password, cancellation.Token);
                     if (!closed) DialogResult = true;
                 }
                 catch (LoginRequiredException error) { if (!closed) status.Text = error.Message; }
@@ -57,8 +74,8 @@ namespace Playnite.DesktopApp.HoleInOne
                 catch (Exception) { if (!closed) status.Text = "로그인할 수 없습니다. 잠시 후 다시 시도해 주세요."; }
                 finally
                 {
-                    password.Clear();
-                    if (!closed) { submit.IsEnabled = true; username.IsEnabled = true; password.IsEnabled = true; password.Focus(); }
+                    password.Clear(); confirmation.Clear();
+                    if (!closed) { mode.IsEnabled = confirmation.IsEnabled = true; submit.IsEnabled = true; username.IsEnabled = true; password.IsEnabled = true; password.Focus(); }
                 }
             };
         }
@@ -78,10 +95,12 @@ namespace Playnite.DesktopApp.HoleInOne
             var dialog = new AccountLoginWindow(settings.BackendUrl) { Owner = Application.Current.MainWindow };
             if (dialog.ShowDialog() != true) return false;
             account = dialog.Account; service = settings.BackendUrl;
+            if (!string.IsNullOrEmpty(account.AccountId) && new Uri(service).Scheme == "https")
+                SteamLinkContext.Configure(service, account.AccountId, account.AccessToken);
             return true;
         }
         public static string TokenFor(LauncherSettings settings) => settings.RequireLogin
             ? (service == settings.BackendUrl ? account?.AccessToken : null) : settings.BearerToken;
-        public static void Forget() { account = null; service = null; }
+        public static void Forget() { account = null; service = null; SteamLinkContext.Forget(); }
     }
 }

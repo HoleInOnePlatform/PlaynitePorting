@@ -23,6 +23,7 @@ internal static class Program
             CheckLogin("changed markup is not completion", "<html>unrecognized</html>", "https://store.steampowered.com/explore/", false);
             Console.WriteLine("6 upstream Steam authentication checks passed.");
             SteamInstallChecks.Run();
+            if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true") LocalSteamLoginChecks.Run();
             SteamUninstallChecks.Run();
             return 0;
         }

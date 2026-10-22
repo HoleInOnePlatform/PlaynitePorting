@@ -39,10 +39,11 @@ namespace Playnite.HoleInOne
         private string requestId = Guid.NewGuid().ToString("N");
         private PreparedCloudSession prepared;
         private bool unsupported;
+        private readonly bool requirePreparation;
         private bool closed;
         private bool claimed;
-        public PreparedSessionManager(IPreparedSessionBackend backend, Func<DateTimeOffset> now = null, Action<string> log = null)
-        { timing = new PerformanceTrace("session_preparation", log); this.log = log; this.backend = backend; this.now = now ?? (() => DateTimeOffset.UtcNow); }
+        public PreparedSessionManager(IPreparedSessionBackend backend, Func<DateTimeOffset> now = null, bool requirePreparation = false, Action<string> log = null)
+        { this.requirePreparation = requirePreparation; timing = new PerformanceTrace("session_preparation", log); this.log = log; this.backend = backend; this.now = now ?? (() => DateTimeOffset.UtcNow); }
 
         private async Task PrepareCoreAsync(CancellationToken ct)
         {
@@ -53,7 +54,7 @@ namespace Playnite.HoleInOne
             {
                 try { log?.Invoke("[HIO-PREPARE-ERROR] trace=" + timing.Id + " stage=prepare_api " + BackendConnection.DescribeFailure(error, ct)); }
                 catch { } // Logging must not change retry or fallback behavior.
-                if (error is PrewarmingUnavailableException) unsupported = true;
+                if (error is PrewarmingUnavailableException && !requirePreparation) unsupported = true;
                 else throw;
             }
         }
@@ -119,6 +120,7 @@ namespace Playnite.HoleInOne
                         }
                         if (prepared.GameId != gameId)
                         {
+                            if (requirePreparation) throw new InvalidOperationException("이 게임은 사용자별 클라우드 준비를 아직 지원하지 않습니다.");
                             await ReleaseCoreAsync(ct).ConfigureAwait(false);
                             ct.ThrowIfCancellationRequested();
                             var legacy = await timing.RunAsync("legacy_create_api", () => backend.CreateSessionAsync(ct, gameId)).ConfigureAwait(false);

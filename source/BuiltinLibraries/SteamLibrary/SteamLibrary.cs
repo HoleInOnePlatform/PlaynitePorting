@@ -108,6 +108,25 @@ namespace SteamLibrary
 
         public override IEnumerable<GameMetadata> GetGames(LibraryGetGamesArgs args)
         {
+            if (Playnite.HoleInOne.LauncherSettings.Load().RequireLogin)
+            {
+                var games = Steam.IsInstalled ? new Dictionary<string, GameMetadata>(SteamLocalService.GetInstalledGames()) : new Dictionary<string, GameMetadata>();
+                if (Playnite.HoleInOne.SteamLinkContext.IsConfigured && Playnite.HoleInOne.SteamLinkContext.HasLocalLogin)
+                {
+                    using (var bridge = new Playnite.HoleInOne.SteamLinkBridge())
+                    {
+                        var owned = bridge.LibraryAsync(System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+                        foreach (var item in owned)
+                        {
+                            var id = ((uint)item["appId"]).ToString();
+                            if (games.TryGetValue(id, out var installed)) { installed.Playtime = (ulong)item["playtimeMinutes"] * 60; continue; }
+                            games[id] = new GameMetadata { GameId=id, Name=(string)item["name"], Playtime=(ulong)item["playtimeMinutes"]*60,
+                                Source=new MetadataNameProperty("Steam"), Platforms=new HashSet<MetadataProperty> { new MetadataSpecProperty("pc_windows") } };
+                        }
+                    }
+                }
+                return games.Values;
+            }
             var aggregator = new SteamServiceAggregator(new(), new(PlayniteApi), new(), new(), new(), ServicesClient, this);
             return aggregator.GetGamesAsync(SettingsViewModel.Settings).GetAwaiter().GetResult();
         }

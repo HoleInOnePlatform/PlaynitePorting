@@ -5,5 +5,6 @@
   <ItemGroup>
     <Compile Include="../../source/Playnite/HoleInOne/HandoffDeadline.cs" Link="HandoffDeadline.cs" />
     <Compile Include="../../source/Playnite.DesktopApp/HoleInOne/DownloadHandoffPrompt.cs" Link="DownloadHandoffPrompt.cs" />
+    <Compile Include="../../source/Playnite.DesktopApp/HoleInOne/LocalDownloadNotice.cs" Link="LocalDownloadNotice.cs" />
   </ItemGroup>
 </Project>
