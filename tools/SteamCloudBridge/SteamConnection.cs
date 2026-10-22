@@ -105,17 +105,18 @@ public sealed class SteamConnection : IAsyncDisposable
     }
 }
 
-public sealed class SteamCloudTransport : ICloudTransport, IDisposable
+public sealed class SteamCloudTransport : ICloudSessionTransport, IDisposable
 {
     private readonly SteamConnection connection;
     private readonly Cloud cloud;
     private readonly uint appId;
-    private readonly ulong clientId = BitConverter.ToUInt64(RandomNumberGenerator.GetBytes(8));
+    private readonly ulong clientId;
     private readonly HttpClient http = new(new SocketsHttpHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(30) };
     private ulong buildId;
-    public SteamCloudTransport(SteamConnection connection, uint appId)
+    public SteamCloudTransport(SteamConnection connection, uint appId, ulong clientId)
     {
         this.connection = connection; this.appId = appId;
+        this.clientId = clientId;
         cloud = connection.Client.GetHandler<SteamUnifiedMessages>()!.CreateService<Cloud>();
     }
     private static async Task<T> Receive<T>(AsyncJob<SteamUnifiedMessages.ServiceMethodResponse<T>> job, CancellationToken ct)
@@ -255,4 +256,9 @@ public sealed class SteamCloudTransport : ICloudTransport, IDisposable
         }
     }
     public void Dispose() => http.Dispose();
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        await connection.DisposeAsync();
+    }
 }

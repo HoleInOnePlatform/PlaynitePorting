@@ -61,6 +61,41 @@ Check(!fake.Calls.Contains("ready"), "launch check not reached after failed veri
 fake = new(before) { Pending = true };
 await Reject(() => new CloudSyncEngine(fake).SyncAsync([desired], before, [], app, user, false, default), "remote_operation_pending", "pending foreign session blocks success");
 Check(fake.Files[name].Sha1 == desired.Sha1, "uploaded copy retained for safe retry after pending session");
+var preparationConnection = new FakeCloud(before);
+var disconnectedConnection = new FakeCloud(before) { Disconnected = true };
+var recoveredConnection = new FakeCloud(before);
+var editedConnection = new FakeCloud(Snapshot((name, Bytes("other device"))));
+var connections = new Queue<FakeCloud>([preparationConnection, disconnectedConnection, recoveredConnection, editedConnection]);
+var failLogin = false;
+Task<ICloudSessionTransport> Connect(CancellationToken ct)
+{
+    ct.ThrowIfCancellationRequested();
+    if (failLogin) throw new CloudFailure("steam_disconnected");
+    return Task.FromResult<ICloudSessionTransport>(connections.Dequeue());
+}
+var prepared = await PreparedCloudUpload.PrepareAsync(Connect, app, user, default);
+Check(preparationConnection.Disposed && prepared.BaselineFiles == 1,
+    "preparation releases Steam connection before gameplay while retaining baseline");
+await Reject(() => prepared.SyncAsync([desired], false, default), "steam_disconnected",
+    "disconnect during a transfer remains a retryable operation failure");
+Check(disconnectedConnection.Disposed, "failed transfer releases disconnected connection");
+failLogin = true;
+await Reject(() => prepared.SyncAsync([desired], false, default), "steam_disconnected",
+    "failed reconnect leaves prepared upload available for another retry");
+failLogin = false;
+await prepared.SyncAsync([desired], false, default);
+Check(recoveredConnection.Disposed && recoveredConnection.Files[name].Sha1 == desired.Sha1,
+    "retry uses a fresh connection and completes upload");
+await Reject(() => prepared.SyncAsync([desired], false, default), "remote_changed",
+    "reconnection preserves original baseline and rejects another device's changes");
+Check(editedConnection.Disposed && !editedConnection.Calls.Contains("begin") && connections.Count == 0,
+    "conflict closes fresh connection without uploading");
+using (var cancelled = new CancellationTokenSource())
+{
+    cancelled.Cancel();
+    try { await prepared.SyncAsync([desired], false, cancelled.Token); throw new Exception("Expected cancellation"); }
+    catch (OperationCanceledException) { Check(connections.Count == 0, "cancelled retry does not open another connection"); }
+}
 Check(!SteamCloudTransport.IsStorageHost(new Uri("https://127.0.0.1/upload")) && !SteamCloudTransport.IsStorageHost(new Uri("https://example.com")) &&
     !SteamCloudTransport.IsStorageHost(new Uri("http://steamcloud.blob.core.windows.net/file")), "untrusted upload endpoints rejected");
 Check(SteamCloudTransport.IsStorageHost(new Uri("https://steamcloudseoul2.blob.core.windows.net/file")), "Steam storage endpoint accepted");
@@ -124,12 +159,20 @@ if (args.Length == 1)
     Console.WriteLine($"{checks} checks including packaged worker IPC passed.");
 }
 
-sealed class FakeCloud(CloudSnapshot initial) : ICloudTransport
+sealed class FakeCloud(CloudSnapshot initial) : ICloudSessionTransport
 {
     public readonly Dictionary<string, RemoteFile> Files = new(initial.Files, StringComparer.OrdinalIgnoreCase);
     public readonly List<string> Calls = [];
-    public bool FailUpload, CancelUpload, CorruptAfterUpload, Pending;
-    public Task<CloudSnapshot> SnapshotAsync(CancellationToken ct) { Calls.Add("snapshot"); return Task.FromResult(new CloudSnapshot(1, new Dictionary<string, RemoteFile>(Files))); }
+    public bool FailUpload, CancelUpload, CorruptAfterUpload, Pending, Disconnected, Disposed;
+    public Task<IReadOnlyList<CloudRule>> RulesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<CloudRule>>([]);
+    public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; }
+    public Task<CloudSnapshot> SnapshotAsync(CancellationToken ct)
+    {
+        if (Disposed) throw new ObjectDisposedException(nameof(FakeCloud));
+        Calls.Add("snapshot");
+        if (Disconnected) throw new CloudFailure("steam_disconnected");
+        return Task.FromResult(new CloudSnapshot(1, new Dictionary<string, RemoteFile>(Files)));
+    }
     public Task<ulong> BeginAsync(IReadOnlyList<UploadFile> files, ulong expectedChange, CancellationToken ct) { Calls.Add("begin"); return Task.FromResult(42UL); }
     public Task UploadAsync(ulong batch, UploadFile file, CancellationToken ct)
     {

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Channels;
 using HoleInOne.SteamCloud;
@@ -34,26 +35,41 @@ try
         string.IsNullOrWhiteSpace(start.TokenPath) || !Path.IsPathFullyQualified(start.TokenPath)) throw new CloudFailure("invalid_request");
     Directory.CreateDirectory(Path.GetDirectoryName(start.TokenPath)!);
     using var accountLock = new FileStream(start.TokenPath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-    await using var connection = new SteamConnection();
-    using (var loginTimeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token))
+    if (start.Operation == "auth")
     {
-        loginTimeout.CancelAfter(TimeSpan.FromSeconds(start.Operation == "auth" ? 180 : 45));
-        await connection.LoginAsync(start.TokenPath, steamId, start.Operation == "auth", Emit, loginTimeout.Token);
+        await using var connection = new SteamConnection();
+        using var loginTimeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        loginTimeout.CancelAfter(TimeSpan.FromSeconds(180));
+        await connection.LoginAsync(start.TokenPath, steamId, true, Emit, loginTimeout.Token);
+        Emit(new { type = "authenticated", steamId = steamId.ToString() });
     }
-    if (start.Operation == "auth") Emit(new { type = "authenticated", steamId = steamId.ToString() });
     else
     {
         if (start.AppId == 0) throw new CloudFailure("invalid_request");
-        using var transport = new SteamCloudTransport(connection, start.AppId);
-        IReadOnlyList<CloudRule> rules;
-        CloudSnapshot baseline;
+        var cloudClientId = BitConverter.ToUInt64(RandomNumberGenerator.GetBytes(8));
+        async Task<ICloudSessionTransport> ConnectAsync(CancellationToken ct)
+        {
+            var connection = new SteamConnection();
+            try
+            {
+                using var loginTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                loginTimeout.CancelAfter(TimeSpan.FromSeconds(45));
+                await connection.LoginAsync(start.TokenPath, steamId, false, Emit, loginTimeout.Token);
+                return new SteamCloudTransport(connection, start.AppId, cloudClientId);
+            }
+            catch
+            {
+                await connection.DisposeAsync();
+                throw;
+            }
+        }
+        PreparedCloudUpload upload;
         using (var prepare = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token))
         {
-            prepare.CancelAfter(TimeSpan.FromSeconds(45));
-            rules = await transport.RulesAsync(prepare.Token);
-            baseline = await transport.SnapshotAsync(prepare.Token);
+            prepare.CancelAfter(TimeSpan.FromSeconds(90));
+            upload = await PreparedCloudUpload.PrepareAsync(ConnectAsync, start.AppId, steamId, prepare.Token);
         }
-        Emit(new { type = "ready", steamId = steamId.ToString(), appId = start.AppId, baselineFiles = baseline.Files.Count });
+        Emit(new { type = "ready", steamId = steamId.ToString(), appId = start.AppId, baselineFiles = upload.BaselineFiles });
         await foreach (var command in queue.Reader.ReadAllAsync(lifetime.Token))
         {
             try
@@ -65,7 +81,7 @@ try
                 operation.CancelAfter(TimeSpan.FromSeconds(120));
                 var watch = Stopwatch.StartNew();
                 var files = await SaveBundle.ReadAsync(command.ArchivePath, command.Sha256, start.AppId, operation.Token);
-                var plan = await new CloudSyncEngine(transport).SyncAsync(files, baseline, rules, start.AppId, steamId, command.Operation == "preview", operation.Token);
+                var plan = await upload.SyncAsync(files, command.Operation == "preview", operation.Token);
                 Emit(new { type = "complete", preview = command.Operation == "preview", uploaded = plan.Files.Count, unchanged = plan.Unchanged,
                     localOnly = plan.LocalOnly, bytes = plan.Files.Sum(f => f.Bytes.LongLength), elapsedMs = watch.ElapsedMilliseconds });
             }

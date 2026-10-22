@@ -75,6 +75,12 @@ namespace Playnite.DesktopApp.HoleInOne
 
         public void SetBusy(bool busy, string message)
         {
+            if (!busy && transferScreen != null)
+            {
+                host.Children.Remove(transferScreen);
+                transferScreen = null;
+                transferStatus = null;
+            }
             if (busy && transferScreen == null)
             {
                 transferStatus = new TextBlock { Foreground = Brushes.White, FontSize = 20, TextWrapping = TextWrapping.Wrap,

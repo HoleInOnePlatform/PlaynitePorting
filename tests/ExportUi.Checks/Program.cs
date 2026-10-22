@@ -88,10 +88,18 @@ internal static class Program
             var transferImage = new PngBitmapEncoder(); transferImage.Frames.Add(BitmapFrame.Create(transferring));
             using (var output = File.Create(args[0] + "-transferring.png")) transferImage.Save(output);
             now = now.AddMinutes(30); prompt.SetBusy(false, "전환 실패: 재시도 가능");
+            Layout(panel, 1100, 650);
+            Check(overlay.Children.Count == 1 && VisualTreeHelper.HitTest(panel, new Point(20, 400)).VisualHit == game,
+                "failed handoff removes transfer screen and restores game input");
             tick.Invoke(prompt, new object[] { null, EventArgs.Empty });
             Check(FindText(panel, "30:00") && button.IsEnabled, "retry preserves original deadline");
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Layout(panel, 1100, 650);
+            Check(clicks == 2 && overlay.Children.Count == 2 && !button.IsEnabled &&
+                VisualTreeHelper.HitTest(panel, new Point(20, 400)).VisualHit != game,
+                "retry recreates transfer screen and blocks duplicate requests");
             now = now.AddMinutes(30); tick.Invoke(prompt, new object[] { null, EventArgs.Empty });
-            Check(closed && clicks == 1, "60 minute expiry closes the window without switching");
+            Check(closed && clicks == 2, "60 minute expiry closes the window without switching");
         }
         Check(overlay.Children.Count == 0, "toast is removed when disposed");
         Console.WriteLine("Local download and handoff UI checks passed.");

@@ -169,6 +169,44 @@ public interface ICloudTransport
     Task EnsureLaunchReadyAsync(CancellationToken ct);
 }
 
+public interface ICloudSessionTransport : ICloudTransport, IAsyncDisposable
+{
+    Task<IReadOnlyList<CloudRule>> RulesAsync(CancellationToken ct);
+}
+
+// Keep the original conflict baseline, but never reuse a connection across gameplay or retries.
+public sealed class PreparedCloudUpload
+{
+    private readonly Func<CancellationToken, Task<ICloudSessionTransport>> connect;
+    private readonly CloudSnapshot baseline;
+    private readonly IReadOnlyList<CloudRule> rules;
+    private readonly uint appId;
+    private readonly ulong steamId;
+    public int BaselineFiles => baseline.Files.Count;
+
+    private PreparedCloudUpload(Func<CancellationToken, Task<ICloudSessionTransport>> connect,
+        CloudSnapshot baseline, IReadOnlyList<CloudRule> rules, uint appId, ulong steamId)
+    {
+        this.connect = connect; this.baseline = baseline; this.rules = rules;
+        this.appId = appId; this.steamId = steamId;
+    }
+
+    public static async Task<PreparedCloudUpload> PrepareAsync(
+        Func<CancellationToken, Task<ICloudSessionTransport>> connect, uint appId, ulong steamId, CancellationToken ct)
+    {
+        await using var transport = await connect(ct);
+        var rules = await transport.RulesAsync(ct);
+        var baseline = await transport.SnapshotAsync(ct);
+        return new(connect, baseline, rules, appId, steamId);
+    }
+
+    public async Task<UploadPlan> SyncAsync(IReadOnlyList<SaveFile> files, bool preview, CancellationToken ct)
+    {
+        await using var transport = await connect(ct);
+        return await new CloudSyncEngine(transport).SyncAsync(files, baseline, rules, appId, steamId, preview, ct);
+    }
+}
+
 public sealed class CloudSyncEngine(ICloudTransport transport)
 {
     public async Task<UploadPlan> SyncAsync(IReadOnlyList<SaveFile> files, CloudSnapshot baseline, IReadOnlyList<CloudRule> rules,
