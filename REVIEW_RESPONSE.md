@@ -46,3 +46,14 @@ Backend PR #4는 연결 GitHub에서 404였다. 로컬 Backend 158a861은 failed
 - 실제 workflow와 HTTP 클라이언트를 사용하는 모의 검사를 추가해 총 159개가 통과했다. no_save·실패·취소·계정 변경·재개 시 동일 ID·다른 ID 거부를 검사한다. 실제 파일 복원·WPF 클릭 검사를 대신하지 않는다.
 - SteamSetup.Compile과 데스크톱·내장 Steam/Epic 라이브러리·브라우저 빌드 성공. 최종 복구 변경 이후 데스크톱 재빌드도 성공했다. 고정 SteamLink 출력과 함께 `artifacts/ReviewValidation`에 저장했다. DesktopApplication의 기존 줄바꿈과 BOM은 보존하고 추가 부분을 정리하여 git diff --check 통과.
 - 남은 항목: 실제 WPF 및 서버 재시작 통합 검사, 실제 서버 health·로그인, 원격 CI 및 배포 확인. 이전의 Backend 접근 권한 필요 설명은 로컬 Git 인증 경로에 대해서는 해결됐다.
+
+## 원격 CI 완료 및 사용자 검증 인계
+
+검증 커밋 `f189cfe9072c69b04acc62589a62fe22d6a44e56`를 PR #5와 검증 브랜치에 push했다. 토큰 등록 후 Backend checkout을 포함한 두 통합 빌드와 두 PR 검사가 모두 성공했다.
+
+- [App 통합 CI](https://github.com/HoleInOnePlatform/PlaynitePorting/actions/runs/39903447865)
+- [V5 통합 CI](https://github.com/HoleInOnePlatform/PlaynitePorting/actions/runs/39903447775)
+- [App PR 검사](https://github.com/HoleInOnePlatform/PlaynitePorting/actions/runs/39903454407)
+- [V5 PR 검사](https://github.com/HoleInOnePlatform/PlaynitePorting/actions/runs/39903454418)
+
+사용자가 실제 테스트를 직접 수행하기로 하여 UI·실서버·게임 검증은 이번 작업에서 제외했다. 배포 전 사용자 확인이 필요하며 CI 성공이 이를 대체하지 않는다. PR 답글 등록·머지·운영 배포는 수행하지 않았다. 앞선 미push·CI 미완료 기록은 당시 이력이며 이 절이 최신 상태다.

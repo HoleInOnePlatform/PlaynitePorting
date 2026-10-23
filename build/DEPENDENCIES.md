@@ -28,4 +28,4 @@ PR 검사 성공만으로 통합 빌드 성공을 의미하지 않는다. 머지
 - `App refactoring checks`와 `V5 session prewarm`에서 검토한 앱 브랜치를 선택하고 실행한 커밋 SHA와 성공 링크를 기록한다.
 - 신뢰하지 않는 외부 PR 브랜치에는 토큰이 사용되는 수동 빌드를 실행하지 않는다.
 
-CI 성공 링크는 원격 실행 후 별도로 기록해야 한다. secret 등록·push·배포는 아직 수행하지 않았다.
+토큰 등록 및 push 후 두 통합 CI가 성공했다: [App](https://github.com/HoleInOnePlatform/PlaynitePorting/actions/runs/39903447865), [V5](https://github.com/HoleInOnePlatform/PlaynitePorting/actions/runs/39903447775). 검증 커밋은 f189cfe9072c69b04acc62589a62fe22d6a44e56이며 운영 배포는 수행하지 않았다.

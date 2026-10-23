@@ -32,8 +32,8 @@
 - [x] `push` 대상의 `feature/refactoring_sonch`를 유지할 필요가 없으면 제거한다.
 
 완료 기준:
-- [ ] 깨끗한 환경에서 두 CI의 검사·데스크톱 빌드·SteamLink 빌드가 성공한다.
-- [ ] 필요한 권한·의존성 버전·로컬 빌드 절차를 문서화하고 성공한 실행 링크를 기록한다.
+- [x] 깨끗한 환경에서 두 CI의 검사·데스크톱 빌드·SteamLink 빌드가 성공한다.
+- [x] 필요한 권한·의존성 버전·로컬 빌드 절차를 문서화하고 성공한 실행 링크를 기록한다.
 
 ### 1-2. 잘못 저장된 개발 서버 주소의 시작 실패 복구
 
@@ -176,6 +176,19 @@
 - [x] 서버 재시작 뒤 `failed/recovery_required`만 사용자가 명시적으로 재개할 수 있도록 버튼을 제공한다. 기존 상태를 GET으로 확인한 뒤 POST하며 같은 요청 ID인지 재검사한다. 일반 failed는 재시도하지 않는다. Backend의 RecoveryBlocked 거부 정책을 유지한다.
 - [ ] 실제 Backend 재시작·예약 보존·RecoveryBlocked 거부를 서버 통합 검사로 검증한다. 클라이언트 모의 검사는 통과했으나 실서버 검증은 별도다.
 - [ ] 실제 WPF 화면의 연속 클릭·재조회 실패·다운로드 시간 초과와 시작 설정→로그인 흐름을 검증한다. 위 159개 검사는 실제 UI 검증을 대신하지 않는다.
-- [ ] 원격 secret 등록, 수동 CI 실행 및 성공 링크 기록, 실제 서버 계약·로그인·배포 순서 확인.
+- [x] 원격 secret 등록 후 ci/pr-5-validation push로 두 통합 CI 및 두 PR 검사 성공. 아래 실행 링크 참조.
+- [ ] 실제 서버 계약·로그인·배포 확인은 사용자 직접 검증으로 이관.
 
 Backend 확인 결과: `Get`은 상태 조회만 한다. `Start`는 기존 transfer를 유지하면서 Pending/Failed에서 worker를 다시 실행하고, Ready/Received/진행 중 상태에서는 기존 상태를 반환한다. 재시작 시 Ready/Received/NoSave 외 상태는 Failed로 복원된다. 이미 Scheduled이거나 파일이 있는 요청은 재개 여지가 있지만 `RecoveryBlocked` 요청은 거부한다. 따라서 모든 failed POST가 단순 조회라는 기존 가정은 틀리며, GET만으로 전체 재시작 복구가 된다고 판단해서도 안 된다. 재개 구현 시 기존 요청 ID에 묶인 명시적 재개와 중복 예약 방지 검증이 필요하다.
+
+## 원격 CI 최종 결과 및 수동 검증 인계
+
+- 검증 커밋: `f189cfe9072c69b04acc62589a62fe22d6a44e56`.
+- 코드·CI·문서를 세 커밋으로 나누어 PR #5 브랜치와 `ci/pr-5-validation`에 push했다.
+- [App 통합 빌드 성공](https://github.com/HoleInOnePlatform/PlaynitePorting/actions/runs/39903447865): Backend checkout, 계약·설정 검사, SteamSetup.Compile, 앱·SteamLink 빌드 모두 성공.
+- [V5 통합 빌드 성공](https://github.com/HoleInOnePlatform/PlaynitePorting/actions/runs/39903447775): Backend checkout, 검사, Windows 데스크톱·브라우저 빌드 모두 성공.
+- [App PR 검사 성공](https://github.com/HoleInOnePlatform/PlaynitePorting/actions/runs/39903454407), [V5 PR 검사 성공](https://github.com/HoleInOnePlatform/PlaynitePorting/actions/runs/39903454418).
+- BACKEND_READ_TOKEN의 실제 동작을 checkout 성공으로 확인했다. 토큰 값은 조회·기록하지 않았다.
+- 사용자 지시에 따라 실제 UI·서버·게임 테스트는 사용자 직접 검증으로 이관한다. 관련 미체크 항목은 실패가 아니라 미수행·인계 상태이며, 자동 검사 통과로 대신 체크하지 않는다.
+- 사용자 확인 항목: 주소 수정 후 로그인, 복구 취소·시간 초과·연속 클릭, 수신 확인 지연, 서버 재시작 후 같은 요청 재개와 RecoveryBlocked 거부, Backend 배포 후 계약 2 health·로그인.
+- 머지 및 운영 배포는 수행하지 않았다. 이후 문서만 수정한 커밋은 위 코드 검증 커밋과 구분한다.
