@@ -9,7 +9,7 @@
 | 앱 목표 | PlaynitePorting `master` — `dbbab741` (PR #4, 기존 문서에 기록된 기준) |
 | 실제 앱 대조 범위 | 목표 병합 커밋이 로컬에 없어 체크아웃 `9ced8a2c`로 검토함. 이번 실행은 사용자 지정 작업 브랜치의 현재 앱·Backend 코드를 기준으로 확정함 |
 | Backend | Backend `main` — `1778bfb` (PR #3) |
-| 연계 계획 | [Backend 리팩토링 Task](../Backend/REFACTORING_TASKS.md), B0~B7 |
+| 연계 계획 | [Backend 리팩토링 Task](https://github.com/HoleInOnePlatform/Backend/blob/main/REFACTORING_TASKS.md), B0~B7 |
 | 범위 | 데스크톱 앱, 내장 스토어 연동, 대응 Backend API, 빌드·배포·테스트·문서 |
 | 목표 | 클라우드 제품 경로를 회원 로그인 → 사용자별 Steam 연결 → V5 플레이 → 세이브 전환으로 통일. 구형 호출·기능 비활성 우회 제거 및 주소·인증·작업 수명 간소화 |
 | 작업 원칙 | 구현 시작 시 기준 이후 변경과 작업 중인 파일을 다시 확인하고 보존함 |
