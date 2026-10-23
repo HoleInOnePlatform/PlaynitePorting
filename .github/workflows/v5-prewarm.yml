@@ -1,7 +1,8 @@
 name: V5 session prewarm
 on:
+  workflow_dispatch:
   push:
-    branches: [codex/v5-session-prewarm]
+    branches: [codex/v5-session-prewarm, 'ci/**']
   pull_request:
     paths:
       - 'source/Playnite/HoleInOne/**'
@@ -16,10 +17,23 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: PlaynitePorting
+      - uses: actions/checkout@v4
+        if: github.event_name != 'pull_request'
+        with:
+          repository: HoleInOnePlatform/Backend
+          ref: b6f0716ebe482d0999b9311c75463ae308b44397
+          token: ${{ secrets.BACKEND_READ_TOKEN }}
+          persist-credentials: false
+          path: Backend
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
       - run: dotnet run --project tests/HoleInOne.Checks
+        working-directory: PlaynitePorting
       - name: Build Windows desktop and browser
+        if: github.event_name != 'pull_request'
+        working-directory: PlaynitePorting
         shell: pwsh
         run: ./build/Build-HoleInOne.ps1 -Configuration Debug -OutputDirectory artifacts/HoleInOne-V5

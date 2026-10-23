@@ -60,12 +60,12 @@ namespace Playnite.DesktopApp.HoleInOne
                 status.Text = registering ? "가입 중…" : "로그인 중…";
                 try
                 {
-                    using (var backend = new BackendConnection(backendUrl))
-                        Account = registering ? await backend.RegisterAsync(username.Text.Trim(), password.Password, cancellation.Token)
-                            : await backend.LoginAsync(username.Text.Trim(), password.Password, cancellation.Token);
+                    Account = await LauncherLogin.AuthenticateAsync(backendUrl, username.Text, password.Password, registering, cancellation.Token);
                     if (!closed) DialogResult = true;
                 }
                 catch (LoginRequiredException error) { if (!closed) status.Text = error.Message; }
+                catch (BackendRequestException error) { if (!closed) status.Text = error.Message; }
+                catch (System.IO.InvalidDataException error) { if (!closed) status.Text = error.Message; }
                 catch (OperationCanceledException) { if (!closed) status.Text = "서버 응답이 늦어지고 있습니다. 잠시 후 다시 시도해 주세요."; }
                 catch (HttpRequestException error)
                 {
@@ -84,12 +84,29 @@ namespace Playnite.DesktopApp.HoleInOne
     // Kept in memory for this launch only. No password or session token is written to disk.
     public static class LauncherLogin
     {
+        public static async System.Threading.Tasks.Task<AccountLogin> AuthenticateAsync(string address, string username, string password, bool register, CancellationToken ct)
+        {
+            using (var backend = new BackendConnection(address))
+            {
+                await backend.CheckDevelopmentHealthAsync(ct);
+                return register ? await backend.RegisterAsync(username.Trim(), password, ct)
+                    : await backend.LoginAsync(username.Trim(), password, ct);
+            }
+        }
+        public static async System.Threading.Tasks.Task LogoutAsync(LauncherSettings settings)
+        {
+            await CloudPreparation.ResetAsync();
+            using (var backend = new BackendConnection(settings.BackendUrl, TokenFor(settings)))
+                await backend.LogoutAsync(CancellationToken.None);
+            Forget();
+        }
         private static AccountLogin account;
         private static string service;
         public static string Username => account?.Username;
+        public static string AccountId => account?.AccountId;
+        public static long Generation { get; private set; }
         public static bool EnsureSignedIn(LauncherSettings settings)
         {
-            if (!settings.RequireLogin) return true;
             if (service == settings.BackendUrl && account != null && account.ExpiresAt > DateTimeOffset.UtcNow.AddMinutes(1)) return true;
             Forget();
             var dialog = new AccountLoginWindow(settings.BackendUrl) { Owner = Application.Current.MainWindow };
@@ -99,8 +116,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 SteamLinkContext.Configure(service, account.AccountId, account.AccessToken);
             return true;
         }
-        public static string TokenFor(LauncherSettings settings) => settings.RequireLogin
-            ? (service == settings.BackendUrl ? account?.AccessToken : null) : settings.BearerToken;
-        public static void Forget() { account = null; service = null; SteamLinkContext.Forget(); }
+        public static string TokenFor(LauncherSettings settings) => service == settings.BackendUrl ? account?.AccessToken : null;
+        public static void Forget() { Generation++; account = null; service = null; SteamLinkContext.Forget(); }
     }
 }

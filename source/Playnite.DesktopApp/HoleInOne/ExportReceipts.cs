@@ -12,14 +12,15 @@ namespace Playnite.DesktopApp.HoleInOne
         private readonly ExportReceiptOutbox outbox;
         private readonly string address;
         private readonly string token;
+        public Task Completion { get; private set; } = Task.CompletedTask;
         public ExportReceipts(LauncherSettings settings)
         {
             address = settings.BackendUrl;
             token = LauncherLogin.TokenFor(settings);
-            if (settings.RequireLogin && (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(LauncherLogin.Username)))
+            if ((string.IsNullOrEmpty(token) || string.IsNullOrEmpty(LauncherLogin.AccountId)))
                 throw new InvalidOperationException("Receipt cleanup requires the original account.");
             outbox = new ExportReceiptOutbox(Path.Combine(PlaynitePaths.ConfigRootPath, "HoleInOne", "PendingReceipts"),
-                address, settings.RequireLogin ? "account:" + LauncherLogin.Username : "development");
+                address, "account-id:" + LauncherLogin.AccountId);
         }
         public void Enqueue(string sessionId, string requestId, string hash)
         {
@@ -35,7 +36,7 @@ namespace Playnite.DesktopApp.HoleInOne
         public void Start()
         {
             // Own the connection: the coordinator disposes its connection before local launch.
-            _ = Task.Run(async () =>
+            Completion = Task.WhenAll(Completion, Task.Run(async () =>
             {
                 try
                 {
@@ -46,7 +47,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 }
                 catch (Exception error)
                 { LogManager.GetLogger().Warn("Export receipt cleanup deferred (" + error.GetType().Name + ")."); }
-            });
+            }));
         }
     }
 }

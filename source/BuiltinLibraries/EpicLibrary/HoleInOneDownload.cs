@@ -102,15 +102,17 @@ namespace EpicLibrary
         public HoleInOneUninstallController(Game game, EpicLibrary plugin) : base(game) { this.plugin = plugin; Name = "Uninstall"; }
         public override async void Uninstall(UninstallActionArgs args)
         {
-            try
-            {
-                await LegendaryTool.RunAsync("-y", "uninstall", Game.GameId);
-                InvokeOnUninstalled(new GameUninstalledEventArgs());
-            }
+            try { await UninstallAsync(args); }
             catch (Exception)
             {
+                Game.IsUninstalling = false;
                 plugin.PlayniteApi.Dialogs.ShowErrorMessage("Epic 게임 제거를 완료하지 못함.", "HoleInOne");
             }
+        }
+        public override async Task UninstallAsync(UninstallActionArgs args)
+        {
+            await LegendaryTool.RunAsync(CancellationToken.None, TimeSpan.FromMinutes(5), "-y", "uninstall", Game.GameId);
+            InvokeOnUninstalled(new GameUninstalledEventArgs());
         }
         public override void Dispose() { }
     }

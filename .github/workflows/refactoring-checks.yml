@@ -1,0 +1,42 @@
+name: App refactoring checks
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: PlaynitePorting
+      - name: Checkout compatibility fixture Backend (candidate pair checked in Backend release-pair workflow)
+        uses: actions/checkout@v4
+        if: github.event_name != 'pull_request'
+        with:
+          repository: HoleInOnePlatform/Backend
+          ref: b6f0716ebe482d0999b9311c75463ae308b44397
+          token: ${{ secrets.BACKEND_READ_TOKEN }}
+          persist-credentials: false
+          path: Backend
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: App contract and settings tests
+        shell: pwsh
+        working-directory: PlaynitePorting
+        run: |
+          dotnet run --project tests/HoleInOne.Checks
+          if ($LASTEXITCODE -ne 0) { throw 'App checks failed' }
+          dotnet build tests/SteamSetup.Compile
+          if ($LASTEXITCODE -ne 0) { throw 'Steam setup compile failed' }
+      - name: Build app and locked Steam module
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        working-directory: PlaynitePorting
+        run: ./build/Build-HoleInOne.ps1 -OutputDirectory "$pwd/artifacts/ci"

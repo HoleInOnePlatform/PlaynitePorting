@@ -108,7 +108,6 @@ namespace SteamLibrary
 
         public override IEnumerable<GameMetadata> GetGames(LibraryGetGamesArgs args)
         {
-            if (Playnite.HoleInOne.LauncherSettings.Load().RequireLogin)
             {
                 var games = Steam.IsInstalled ? new Dictionary<string, GameMetadata>(SteamLocalService.GetInstalledGames()) : new Dictionary<string, GameMetadata>();
                 if (Playnite.HoleInOne.SteamLinkContext.IsConfigured && Playnite.HoleInOne.SteamLinkContext.HasLocalLogin)
@@ -127,8 +126,6 @@ namespace SteamLibrary
                 }
                 return games.Values;
             }
-            var aggregator = new SteamServiceAggregator(new(), new(PlayniteApi), new(), new(), new(), ServicesClient, this);
-            return aggregator.GetGamesAsync(SettingsViewModel.Settings).GetAwaiter().GetResult();
         }
 
         public override IEnumerable<TopPanelItem> GetTopPanelItems()

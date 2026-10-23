@@ -69,6 +69,19 @@ static class PrewarmChecks
             check(true, "diagnostic logging preserves preparation retry success");
         }
         check(BackendConnection.DescribeFailure(new TaskCanceledException(), default).Contains("reason=timeout"), "request timeout is distinguished from caller cancellation");
+        foreach (var failureCase in new[] {
+            (Status: HttpStatusCode.Conflict, Code: "session_closing"),
+            (Status: HttpStatusCode.TooManyRequests, Code: "request_rate_limited") })
+        {
+            using var errorBackend = new BackendConnection("http://localhost:5010/", handler: new WarmWire {
+                Status = failureCase.Status, ErrorCode = failureCase.Code });
+            try { await errorBackend.PrepareSessionAsync("error-contract", default); throw new Exception("Failure accepted"); }
+            catch (BackendRequestException error) {
+                check(error.Status == (int)failureCase.Status && error.ErrorCode == failureCase.Code &&
+                    !error.Message.Contains("로그인") && !error.Message.Contains("private-detail"),
+                    "preparation conflict and general throttling retain their own codes without login advice");
+            }
+        }
         check(BackendConnection.DescribeFailure(new OperationCanceledException(), new CancellationToken(true)).Contains("reason=cancelled"), "caller cancellation is labeled separately");
         var cloud = new FakeWarmBackend { Pending = new TaskCompletionSource<bool>() };
         var sessions = new PreparedSessionManager(cloud);
@@ -78,7 +91,7 @@ static class PrewarmChecks
         cloud.Pending.SetResult(true);
         await startup;
         var result = await play;
-        check(result.SessionId == "warm-1" && cloud.Legacy == 0 && cloud.Plays == 1, "Play claims the prepared V5 session without creating a legacy session");
+        check(result.SessionId == "warm-1" && cloud.Plays == 1, "Play claims the prepared V5 session without creating a legacy session");
         await Reject(() => sessions.PlayAsync("steam-2868840", default));
         check(cloud.Plays == 1, "concurrent/repeated Play cannot claim the same allocation twice");
         await sessions.PlayFinishedAsync();
@@ -102,20 +115,12 @@ static class PrewarmChecks
 
         cloud = new FakeWarmBackend(); sessions = new PreparedSessionManager(cloud);
         await sessions.PrepareAsync(default);
-        await sessions.PlayAsync("epic-other", default);
-        check(cloud.Plays == 0 && cloud.Stops == 1 && cloud.Legacy == 1, "another game releases the V5 slot and follows its existing game route");
-
+        await Reject(() => sessions.PlayAsync("epic-other", default));
+        check(cloud.Plays == 0, "another game cannot bypass V5 preparation");
         cloud = new FakeWarmBackend { Disabled = true }; sessions = new PreparedSessionManager(cloud);
-        await sessions.PrepareAsync(default); await sessions.PlayAsync("steam-2868840", default);
-        check(cloud.Legacy == 1 && cloud.PrepareIds.Count == 1, "older/disabled backend retains existing streaming behavior");
-
-        cloud = new FakeWarmBackend { Disabled = true }; sessions = new PreparedSessionManager(cloud, requirePreparation: true);
+        await Reject(() => sessions.PrepareAsync(default));
         await Reject(() => sessions.PlayAsync("steam-2868840", default));
-        check(cloud.Legacy == 0, "account mode never falls back to fixed test authentication on disabled preparation");
-        cloud = new FakeWarmBackend(); sessions = new PreparedSessionManager(cloud, requirePreparation: true);
-        await Reject(() => sessions.PlayAsync("steam-other", default));
-        check(cloud.Legacy == 0, "unsupported game cannot bypass per-user preparation");
-
+        check(cloud.PrepareIds.Distinct().Count() == 1, "unavailable preparation fails without allocating a legacy session");
         cloud = new FakeWarmBackend { Pending = new TaskCompletionSource<bool>() }; sessions = new PreparedSessionManager(cloud);
         startup = sessions.PrepareAsync(default); var stop = sessions.StopAsync(default);
         cloud.Pending.SetResult(true); await startup; await stop;
@@ -126,12 +131,6 @@ static class PrewarmChecks
         var prepared = await backend.PrepareSessionAsync("startup-id", default);
         await backend.PlayPreparedSessionAsync(prepared.SessionId, prepared.GameId, default);
         check(wire.Calls.SequenceEqual(new[] { "/v1/holeinone/sessions/prepare", "/v1/holeinone/sessions/warm-1/play" }), "HTTP preparation and claim routes match the backend contract");
-        await Reject(() => backend.ConnectPreparedSessionAsync(prepared.SessionId, prepared.GameId, default));
-        check(true, "missing deferred support confirmation is rejected before navigating");
-        wire.Deferred = true;
-        check((await backend.ConnectPreparedSessionAsync(prepared.SessionId, prepared.GameId, default)).LaunchDeferred, "connect-only route requires explicit launch gate confirmation");
-        await backend.AllowPreparedLaunchAsync(prepared.SessionId, default);
-        check(wire.Calls.Last().EndsWith("/allow-launch"), "baseline confirmation uses authenticated account endpoint");
         wire.Url = "http://attacker.invalid/stream/v5/index.html#warm-1/" + new string('a',64);
         await Reject(() => backend.PlayPreparedSessionAsync("warm-1", "steam-2868840", default));
         check(true, "prepared webview URL must belong to the configured backend");
@@ -164,7 +163,7 @@ static class PrewarmChecks
         public List<string> PrepareIds = new();
         public TaskCompletionSource<bool> Pending;
         public bool FailFirstPrepare, ExpireFirstPlay, Disabled;
-        public int Plays, Stops, Legacy;
+        public int Plays, Stops;
         public async Task<PreparedCloudSession> PrepareSessionAsync(string requestId, CancellationToken ct)
         {
             PrepareIds.Add(requestId);
@@ -179,8 +178,6 @@ static class PrewarmChecks
             if (ExpireFirstPlay && Plays == 1) throw new PreparedSessionExpiredException();
             return Task.FromResult(new CloudSession { SessionId = id, GameId = game });
         }
-        public Task<CloudSession> CreateSessionAsync(CancellationToken ct, string gameId = null)
-        { Legacy++; return Task.FromResult(new CloudSession { SessionId = "legacy", GameId = gameId }); }
         public Task StopCloudAsync(string id, CancellationToken ct) { Stops++; return Task.CompletedTask; }
     }
     private sealed class WarmWire : HttpMessageHandler
@@ -190,7 +187,7 @@ static class PrewarmChecks
         public List<string> Calls = new();
         public string Url = "http://localhost:5010/stream/v5/index.html#warm-1/" + new string('a',64);
         public HttpStatusCode Status = HttpStatusCode.OK;
-        public bool Deferred;
+        public string ErrorCode;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             if (Failure != null) throw Failure;
@@ -199,8 +196,9 @@ static class PrewarmChecks
                 PrepareIds.Add(request.Content.ReadAsStringAsync().GetAwaiter().GetResult());
             object body = request.RequestUri.AbsolutePath.EndsWith("/prepare")
                 ? new { sessionId = "warm-1", gameId = "steam-2868840", expiresAt = DateTimeOffset.UtcNow.AddMinutes(9) }
-                : new { sessionId = "warm-1", gameId = "steam-2868840", streamUrl = Url, launchDeferred = Deferred };
-            return Task.FromResult(new HttpResponseMessage(Status) { Content = new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json") });
+                : new { sessionId = "warm-1", gameId = "steam-2868840", streamUrl = Url };
+            return Task.FromResult(new HttpResponseMessage(Status) { Content = new StringContent(
+                JsonConvert.SerializeObject(ErrorCode == null ? body : new { errorCode = ErrorCode, error = "private-detail" }), Encoding.UTF8, "application/json") });
         }
     }
 }

@@ -9,8 +9,9 @@
 <Compile Include="../../source/Playnite/HoleInOne/SteamLinkConnection.cs"/>
 <Compile Include="../../source/Playnite/HoleInOne/SteamLinkContext.cs"/>
 <Compile Include="../../source/Playnite/HoleInOne/SteamLinkBridge.cs"/>
-<Compile Include="../../source/Playnite/HoleInOne/SteamCloudBridge.cs"/>
+<Compile Include="../../source/Playnite/HoleInOne/LocalSteamAccount.cs"/>
 <Compile Include="../../source/Playnite/HoleInOne/PreparedSessionManager.cs"/>
+<Compile Include="../../source/Playnite/HoleInOne/PerformanceTrace.cs"/>
 <Compile Include="../../source/Playnite/HoleInOne/LauncherSettings.cs"/>
 <Compile Include="../../source/Playnite/HoleInOne/ServiceConfiguration.cs"/>
 <Compile Include="../../source/Playnite/HoleInOne/ExportSaveInstaller.cs"/>
@@ -18,4 +19,5 @@
 <Compile Include="../../source/Playnite.DesktopApp/HoleInOne/AccountLoginWindow.cs"/>
 <Compile Include="../../source/Playnite.DesktopApp/HoleInOne/CloudPreparation.cs"/>
 <Compile Include="../../source/Playnite.DesktopApp/HoleInOne/LauncherSettingsWindow.cs"/>
+<Compile Include="../../source/Playnite.DesktopApp/HoleInOne/LauncherSettingsService.cs"/>
 </ItemGroup></Project>

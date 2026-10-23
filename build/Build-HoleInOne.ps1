@@ -21,6 +21,9 @@ if (!(Test-Path -LiteralPath $locator)) { throw 'Visual Studio Build Tools와 .N
 $compiler = & $locator -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
 if (!$compiler) { throw 'MSBuild를 찾을 수 없음.' }
 $outputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
+if (Test-Path -LiteralPath (Join-Path $outputDirectory 'Tools/SteamCloud')) {
+    throw 'Steam Cloud 업로드 도구가 남아 있는 이전 배포 폴더임. -OutputDirectory로 새 폴더를 지정해야 함.'
+}
 if (Test-Path -LiteralPath (Join-Path $outputDirectory 'Playnite.DesktopApp.exe')) {
     throw 'Playnite 이름의 이전 빌드가 있는 폴더임. -OutputDirectory로 새 폴더를 지정해야 함.'
 }
@@ -30,7 +33,6 @@ foreach ($project in @('Playnite.DesktopApp', 'Playnite.BrowserProcess')) {
         "/p:OutputPath=$outputDirectory" "/p:HoleInOneDistribution=$($Distribution.IsPresent.ToString().ToLowerInvariant())" /p:AppendTargetFrameworkToOutputPath=false /p:AppendRuntimeIdentifierToOutputPath=false
     if ($LASTEXITCODE -ne 0) { throw "$project 빌드 실패: $LASTEXITCODE" }
 }
-& (Join-Path $PSScriptRoot 'Build-SteamCloudBridge.ps1') -Configuration $Configuration -OutputDirectory (Join-Path $outputDirectory 'Tools/SteamCloud')
 & (Join-Path $PSScriptRoot 'Build-SteamLink.ps1') -Configuration $Configuration -OutputDirectory (Join-Path $outputDirectory 'Tools/SteamLink')
 Write-Host "빌드 완료: $outputDirectory/HoleInOne.exe"
 if ($ServiceUrl) {

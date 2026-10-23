@@ -114,7 +114,7 @@ namespace Playnite.HoleInOne
                     var deadline = DateTime.UtcNow.AddMinutes(5);
                     while (game.IsInstalled || game.IsUninstalling)
                     {
-                        if (game.IsRunning || game.IsLaunching || DateTime.UtcNow >= deadline)
+                        if (!game.IsUninstalling || game.IsRunning || game.IsLaunching || DateTime.UtcNow >= deadline)
                             throw new IOException("게임 제거가 완료되지 않아 설치를 중단했습니다: " + game.Name);
                         await Task.Delay(500);
                     }

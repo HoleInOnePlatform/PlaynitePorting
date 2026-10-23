@@ -8,12 +8,12 @@ namespace Playnite.HoleInOne
 {
     public sealed class LauncherSettings
     {
-        public bool SteamCloudUploadEnabled { get; set; }
+        [JsonIgnore]
         public string BackendUrl { get; set; } = "http://127.0.0.1:5010/";
-        public string BearerToken { get; set; }
-        public bool RequireLogin { get; set; }
         [JsonIgnore]
         public bool CanChangeDevelopmentBackend { get; private set; }
+        [JsonIgnore] public string BackendAddressSource { get; private set; }
+        [JsonIgnore] public string DevelopmentAddressWarning { get; private set; }
         // Retain the serialized name for existing Epic installations/settings.
         public string DownloadDirectory { get; set; } = Path.Combine(
             Environment.GetEnvironmentVariable("ProgramW6432") ?? Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Epic Games");
@@ -21,6 +21,9 @@ namespace Playnite.HoleInOne
         public HashSet<Guid> ProtectedGameIds { get; set; } = new HashSet<Guid>();
         public bool IsGameProtected(Guid id) => ProtectedGameIds?.Contains(id) == true;
         private long? maximumStorageGiB;
+        [JsonIgnore] public bool AutomaticStorageLimit => !maximumStorageGiB.HasValue;
+        public bool ShouldSerializeMaximumStorageGiB() => maximumStorageGiB.HasValue;
+        public void UseAutomaticStorageLimit() => maximumStorageGiB = null;
         public long MaximumStorageGiB
         {
             get => maximumStorageGiB ?? new[] { SteamInstallDirectory, DownloadDirectory }
@@ -70,23 +73,23 @@ namespace Playnite.HoleInOne
             // The release bundle supplies only the public service address, never credentials.
             var servicePath = Path.Combine(applicationDirectory, "holeinone.service.json");
             var service = ServiceConfiguration.Load(servicePath, serviceRequired);
-            var development = DevelopmentServiceConfiguration.Load(
-                Path.Combine(applicationDirectory, "holeinone.development.json"), serviceRequired);
-            if (service != null && development != null)
-                throw new InvalidDataException("서비스 설정과 개발용 설정이 함께 있습니다. 올바른 배포 폴더를 사용해 주세요.");
-            if (service != null)
-            {
-                settings.BackendUrl = service.BackendUrl;
-                settings.BearerToken = null;
-                settings.RequireLogin = true;
-            }
-            else if (development != null)
+            settings.BackendUrl = service?.BackendUrl ?? "http://127.0.0.1:5010/";
+            settings.CanChangeDevelopmentBackend = !serviceRequired;
+            settings.BackendAddressSource = service == null ? "local development default" : "holeinone.service.json";
+            if (!serviceRequired)
             {
                 var addressPath = Path.Combine(Path.GetDirectoryName(settingsPath), "holeinone.development-address.json");
-                settings.BackendUrl = DevelopmentServiceAddress.Load(addressPath)?.BackendUrl ?? development.BackendUrl;
-                settings.BearerToken = development.BearerToken;
-                settings.RequireLogin = false;
-                settings.CanChangeDevelopmentBackend = true;
+                try
+                {
+                    var address = DevelopmentServiceAddress.Load(addressPath);
+                    if (address != null) { settings.BackendUrl = address.BackendUrl; settings.BackendAddressSource = "holeinone.development-address.json"; }
+                }
+                catch (Exception error) when (error is JsonException || error is InvalidDataException || error is IOException || error is UnauthorizedAccessException)
+                {
+                    settings.DevelopmentAddressWarning = "저장된 개발 서버 주소를 읽을 수 없어 기본 주소로 돌아왔습니다. 설정에서 개발 서버 주소를 다시 입력해 주세요.";
+                }
+                if (service == null && settings.BackendAddressSource == "local development default")
+                    settings.DevelopmentAddressWarning = settings.DevelopmentAddressWarning ?? "로컬 개발 기본 주소를 사용합니다. 실행 중인 서버가 없다면 설정에서 개발 서버 주소를 입력해 주세요.";
             }
             return settings;
         }

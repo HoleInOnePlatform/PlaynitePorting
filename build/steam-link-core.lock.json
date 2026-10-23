@@ -1,0 +1,18 @@
+{
+  "repository": "HoleInOnePlatform/Backend",
+  "revision": "b6f0716ebe482d0999b9311c75463ae308b44397",
+  "files": [
+    {
+      "path": "Credential.cs",
+      "sha256": "280F1AF76C3246421F927A1D9550DF19C0F40CE5ABCB18A4AED9629DC2D4B21F"
+    },
+    {
+      "path": "SteamAuthentication.cs",
+      "sha256": "1F5E1130C8C6B403CE992F2FEAF1A2132C80038E4B06FAB174F7D415D0B9BE81"
+    },
+    {
+      "path": "SteamLink.Core.csproj",
+      "sha256": "9C9361787C48ACA571EA195494CE98E59D4CCCD6A6F264D74C5AC46B7607232C"
+    }
+  ]
+}

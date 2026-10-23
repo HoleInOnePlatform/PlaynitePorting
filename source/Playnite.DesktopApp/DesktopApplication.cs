@@ -217,7 +217,15 @@ namespace Playnite.DesktopApp
 
             try
             {
-                if (!HoleInOne.LauncherLogin.EnsureSignedIn(Playnite.HoleInOne.LauncherSettings.Load()))
+                var launcherSettings = Playnite.HoleInOne.LauncherSettings.Load();
+                if (launcherSettings.DevelopmentAddressWarning != null)
+                {
+                    logger.Warn(launcherSettings.DevelopmentAddressWarning);
+                    System.Windows.MessageBox.Show(launcherSettings.DevelopmentAddressWarning, "HoleInOne");
+                    new HoleInOne.LauncherSettingsWindow { Owner = CurrentNative.MainWindow }.ShowDialog();
+                    launcherSettings = Playnite.HoleInOne.LauncherSettings.Load();
+                }
+                if (!HoleInOne.LauncherLogin.EnsureSignedIn(launcherSettings))
                 { CurrentNative.Shutdown(); return; }
             }
             catch (Exception)

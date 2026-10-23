@@ -44,19 +44,14 @@ namespace Playnite.HoleInOne
         private async Task<SteamLinkInfo> SteamLinkRequestAsync(HttpMethod method, string suffix, object body, CancellationToken ct)
         {
             if (client.BaseAddress.Scheme != "https") throw new SteamLinkException("https_required");
+            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
             using (var request = new HttpRequestMessage(method, "v1/holeinone/steam-link" + suffix))
             {
+                timeout.CancelAfter(TimeSpan.FromSeconds(method == HttpMethod.Put ? 80 : 30));
                 if (body != null) request.Content = new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json");
-                using (var response = await client.SendAsync(request, ct).ConfigureAwait(false))
+                using (var response = await client.SendAsync(request, timeout.Token).ConfigureAwait(false))
                 {
-                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized) throw new LoginRequiredException("HoleInOne에 다시 로그인해 주세요.");
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        string code = response.StatusCode == System.Net.HttpStatusCode.NotFound ? "steam_link_disabled" : "steam_link_failed";
-                        try { if (text.Length < 4096) code = JsonConvert.DeserializeObject<BackendError>(text)?.ErrorCode ?? code; } catch (JsonException) { }
-                        throw new SteamLinkException(code);
-                    }
+                    await RequireSuccessAsync(response, method.Method, "v1/holeinone/steam-link" + suffix).ConfigureAwait(false);
                     if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return null;
                     var result = JsonConvert.DeserializeObject<SteamLinkInfo>(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
                     if (result == null || (result.State != "linked" && result.State != "unlinked" && result.State != "reauth_required"))

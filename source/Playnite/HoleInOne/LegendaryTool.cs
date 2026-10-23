@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Playnite.HoleInOne
@@ -26,16 +27,24 @@ namespace Playnite.HoleInOne
             return info;
         }
 
-        public static async Task<string> RunAsync(params string[] arguments)
+        public static Task<string> RunAsync(params string[] arguments) =>
+            RunAsync(CancellationToken.None, arguments.Contains("install") ? Timeout.InfiniteTimeSpan : TimeSpan.FromMinutes(2), arguments);
+
+        public static async Task<string> RunAsync(CancellationToken cancellationToken, TimeSpan limit, params string[] arguments)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             using (var process = Process.Start(StartInfo(arguments, false)))
             {
+                if (limit != Timeout.InfiniteTimeSpan) timeout.CancelAfter(limit);
                 process.StandardInput.Close();
                 var output = process.StandardOutput.ReadToEndAsync();
                 var errors = process.StandardError.ReadToEndAsync();
-                await Task.Run(() => process.WaitForExit()).ConfigureAwait(false);
+                using (timeout.Token.Register(() => { try { if (!process.HasExited) process.Kill(); } catch (InvalidOperationException) { } catch (System.ComponentModel.Win32Exception) { } }))
+                    await Task.Run(() => process.WaitForExit()).ConfigureAwait(false);
                 var text = await output.ConfigureAwait(false);
                 await errors.ConfigureAwait(false); // Drain diagnostics without persisting credentials or launch tokens.
+                timeout.Token.ThrowIfCancellationRequested();
                 if (process.ExitCode != 0) throw new InvalidOperationException("Epic 요청을 완료하지 못함. 계정 연결과 저장 공간을 확인해야 함.");
                 return text;
             }
