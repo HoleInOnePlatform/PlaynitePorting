@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [master]
   push:
-    branches: [master, 'ci/**']
+    branches: [master]
 permissions:
   contents: read
 jobs:
@@ -15,7 +15,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: PlaynitePorting
-      - uses: actions/checkout@v4
+      - name: Checkout compatibility fixture Backend (candidate pair checked in Backend release-pair workflow)
+        uses: actions/checkout@v4
         if: github.event_name != 'pull_request'
         with:
           repository: HoleInOnePlatform/Backend

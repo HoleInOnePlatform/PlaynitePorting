@@ -103,6 +103,8 @@ namespace Playnite.HoleInOne
             RecoverHandoffAsync(sessionId, false, ct);
         public Task<PendingSaveRecovery[]> GetRecoveriesAsync(CancellationToken ct) =>
             SendAsync<PendingSaveRecovery[]>(HttpMethod.Get, "v1/holeinone/recovery", null, ct);
+        public async Task AbandonExportAsync(string sessionId, CancellationToken ct) =>
+            await SendAsync<object>(HttpMethod.Post, "v1/holeinone/sessions/" + sessionId + "/export-handoff/abandon", null, ct);
 
         private async Task<ExportHandoffStatus> RecoverHandoffAsync(string sessionId, bool start, CancellationToken ct)
         {
@@ -416,6 +418,7 @@ namespace Playnite.HoleInOne
         public string ErrorCode { get; set; }
         public string FailureStage { get; set; }
         public string AwsErrorCode { get; set; }
+        public bool CanRetry { get; set; } = true;
 
         public string FailureMessage()
         {
@@ -426,7 +429,9 @@ namespace Playnite.HoleInOne
                 FailureStage == "wait_export" ? "AWS 파일 생성" :
                 FailureStage == "download_export" ? "S3 파일 다운로드" :
                 FailureStage == "prepare_saves" ? "세이브 파일 준비" : "세이브 전환";
-            var reason = ErrorCode == "export_timeout" ? "처리 시간이 초과됨." :
+            var reason = ErrorCode == "user_abandoned" ? "사용자가 이 전환의 복구를 종료했습니다. 서버 파일은 별도 보존 정책을 따릅니다." :
+                ErrorCode == "cloud_session_ended" ? "클라우드 세션이 종료되었으며 복구할 예약이나 파일이 없습니다." :
+                ErrorCode == "export_timeout" ? "처리 시간이 초과됨." :
                 ErrorCode == "recovery_required" ? "서버 재시작 전 작업의 복구 확인이 필요함. 새 내보내기를 시작하지 않았음." :
                 ErrorCode == "service_stopping" ? "서버가 종료되어 전환이 중단됨. 다시 로그인한 뒤 기존 요청을 확인해야 함." :
                 ErrorCode == "export_already_reserved" ? "이미 예약된 파일 내보내기의 저장 위치를 확인할 수 없어 전환을 중단함. 반복 시도 대신 세이브 복구가 필요함." :

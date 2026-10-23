@@ -24,10 +24,9 @@ namespace Playnite.DesktopApp.HoleInOne
             if (!System.Text.RegularExpressions.Regex.IsMatch(status.RequestId ?? "", "^[a-zA-Z0-9_-]{1,128}$"))
                 throw new InvalidDataException("잘못된 세이브 전환 식별자임.");
             var requestId = status.RequestId;
-            // Restart recovery is explicit. The server preserves the transfer ID and rejects
-            // RecoveryBlocked requests instead of reserving another export. Ordinary failures
-            // are not retried here because they may legitimately schedule new export work.
-            if (recoveryOnly && status.Status == "failed" && status.ErrorCode == "recovery_required")
+            // The recovery button is an explicit retry. The server decides whether
+            // existing work can resume and preserves the original transfer identity.
+            if (recoveryOnly && status.Status == "failed" && status.CanRetry)
             {
                 requireLive();
                 if (status.GameId != key) throw new InvalidDataException("다른 게임의 전환 요청입니다.");

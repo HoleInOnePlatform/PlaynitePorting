@@ -53,13 +53,32 @@ namespace Playnite.DesktopApp.HoleInOne
                         var game = DesktopApplication.Current.Database.Games.FirstOrDefault(g =>
                             (g.PluginId == BuiltinStoreLibrary.SteamId || g.PluginId == BuiltinStoreLibrary.EpicId) && BuiltinStoreLibrary.GameKey(g) == item.Transfer.GameId);
                         var state = item.Transfer.Status;
-                        var restartRecovery = state == "failed" && item.Transfer.ErrorCode == "recovery_required";
-                        var label = restartRecovery ? "서버 재시작 후 복구 재개" : state == "ready" ? "복원 준비 완료" : state == "no_save" ? "세이브 없음" :
+                        var restartRecovery = state == "failed" && item.Transfer.CanRetry;
+                        var label = state == "abandoned" ? "복구 종료" : !item.Transfer.CanRetry ? "복구 불가: " + item.Transfer.FailureMessage() : restartRecovery ? "기존 전환 재시도" : state == "ready" ? "복원 준비 완료" : state == "no_save" ? "세이브 없음" :
                             state == "failed" ? "전환 실패" : state == "preparing" || state == "exporting" ? "전환 진행 중" : "확인이 필요한 상태";
                         var button = new Button { Content = (game?.Name ?? item.Transfer.GameId) + " · " + label,
                             IsEnabled = restartRecovery || state == "ready" || state == "preparing" || state == "exporting", Margin = new Thickness(0, 8, 0, 0) };
                         button.Click += async (s, e) => await RestoreAsync(item, settings, generation);
                         rows.Children.Add(button);
+                        if (state == "failed")
+                        {
+                            var abandon = new Button { Content = "이 전환 복구 종료", Margin = new Thickness(0, 4, 0, 0) };
+                            abandon.Click += async (s, e) =>
+                            {
+                                if (busy || generation != LauncherLogin.Generation) return;
+                                if (MessageBox.Show("이 전환을 다시 시도할 수 없게 됩니다. 복구를 종료할까요?", "복구 종료", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+                                busy = true; rows.IsEnabled = false;
+                                try
+                                {
+                                    using (var connection = new BackendConnection(settings.BackendUrl, LauncherLogin.TokenFor(settings)))
+                                        await connection.AbandonExportAsync(item.SessionId, closed.Token);
+                                }
+                                catch (Exception) { status.Text = "복구 종료 요청에 실패했습니다. 목록을 다시 조회해 주세요."; }
+                                finally { busy = false; rows.IsEnabled = true; }
+                                await LoadAsync();
+                            };
+                            rows.Children.Add(abandon);
+                        }
                     }
                 }
             }
