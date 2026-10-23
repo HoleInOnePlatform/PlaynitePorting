@@ -12,6 +12,9 @@ $packages = Join-Path $projectRoot '.packages'
 $coreRoot = Join-Path ([IO.Path]::GetFullPath($BackendDirectory)) 'tools/SteamLink.Core'
 $lock = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'steam-link-core.lock.json') -Raw | ConvertFrom-Json
 foreach ($file in $lock.files) {
+    if (!(Test-Path -LiteralPath (Join-Path $coreRoot $file.path))) {
+        throw "Missing SteamLink.Core/$($file.path). Checkout $($lock.repository) revision $($lock.revision) into $BackendDirectory (requires Backend read access), or pass -BackendDirectory. See build/DEPENDENCIES.md."
+    }
     if ((Get-FileHash -LiteralPath (Join-Path $coreRoot $file.path) -Algorithm SHA256).Hash -ne $file.sha256) {
         throw "SteamLink.Core source differs from locked revision $($lock.revision). Review and update the lock before building."
     }
