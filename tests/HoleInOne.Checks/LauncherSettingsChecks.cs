@@ -42,6 +42,15 @@ static class LauncherSettingsChecks
                 check(rejected && DevelopmentServiceAddress.Load(overridePath).BackendUrl == "https://dev.example/", "invalid address cannot overwrite a valid override");
             }
             File.WriteAllText(Path.Combine(app, "holeinone.service.json"), "{\"BackendUrl\":\"https://service.example/\"}");
+            foreach (var invalid in new[] { "{", "null", "{}", "{\"BackendUrl\":\"\"}", "{\"BackendUrl\":\"http://203.0.113.1/\"}" })
+            {
+                File.WriteAllText(overridePath, invalid);
+                var recovered = LauncherSettings.Load(settingsPath, app, false);
+                check(recovered.BackendUrl == "https://service.example/" && recovered.DevelopmentAddressWarning != null,
+                    "invalid development override falls back to service with guidance");
+                check(recovered.DownloadDirectory == "C:/Existing/Games" && recovered.IsGameProtected(id), "address recovery preserves game settings");
+            }
+            check(DevelopmentServiceAddress.Normalize("127.0.0.1") == "http://127.0.0.1:5010/", "bare loopback remains supported");
             settings = LauncherSettings.Load(settingsPath, app, true);
             check(!settings.CanChangeDevelopmentBackend && settings.BackendUrl == "https://service.example/", "distribution uses service address and ignores development files");
             check(!JsonConvert.DeserializeObject<LauncherSettings>("{\"ProtectedGameIds\":null}").IsGameProtected(id), "null protection list remains supported");

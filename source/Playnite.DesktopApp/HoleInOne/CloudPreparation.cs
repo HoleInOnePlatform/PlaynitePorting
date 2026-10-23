@@ -48,7 +48,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 var cancellation = preparationCancellation.Token;
                 // Startup already completed the login dialog. Do not show another dialog here.
                 if (string.IsNullOrEmpty(LauncherLogin.TokenFor(settings))) return;
-                if ((!SteamLinkContext.IsConfigured || !(await SteamLinkContext.RefreshAsync(cancellation)).IsLinked)) return;
+                if (!SteamLinkContext.IsConfigured || !(await SteamLinkContext.RefreshAsync(cancellation)).IsLinked) return;
                 cancellation.ThrowIfCancellationRequested();
                 if (generation != LauncherLogin.Generation) return;
                 new ExportReceipts(settings).Start();
@@ -57,7 +57,7 @@ namespace Playnite.DesktopApp.HoleInOne
             catch (Exception error)
             {
                 // Preparation must not block library use. Play retries the same preparation ID.
-                LogManager.GetLogger().Warn("Cloud preparation deferred (" + error.GetType().Name + ").");
+                LogManager.GetLogger().Warn("Cloud preparation deferred (" + BackendConnection.DescribeFailure(error, CancellationToken.None) + ").");
             }
         }
         public static Task ResetAsync()
@@ -84,7 +84,7 @@ namespace Playnite.DesktopApp.HoleInOne
                     await context.Sessions.StopAsync(timeout.Token).ConfigureAwait(false);
             }
             catch (Exception error)
-            { LogManager.GetLogger().Warn("Prepared session cleanup deferred to server expiry (" + error.GetType().Name + ")."); }
+            { LogManager.GetLogger().Warn("Prepared session cleanup deferred to server expiry (" + BackendConnection.DescribeFailure(error, CancellationToken.None) + ")."); }
             finally { context.Backend.Dispose(); }
         }
         public static void Shutdown()

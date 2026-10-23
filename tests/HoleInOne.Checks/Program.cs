@@ -19,12 +19,13 @@ async Task Reject(Func<Task> action, string name)
 var token = CancellationToken.None;
 LocalDownloadChecks.Run(Check);
 await HandoffRecoveryChecks.RunAsync(Check);
+await SaveWorkflowChecks.RunAsync(Check);
 await PerformanceChecks.RunAsync(Check);
 await ReceiptChecks.RunAsync(Check);
 using var wire = new FakeBackend();
 using var client = new BackendConnection("http://localhost:5010", handler: wire);
 await client.CheckDevelopmentHealthAsync(token);
-Check(wire.Calls.Last() == "GET /health" && wire.Authorized, "health contract check sends no account credentials");
+Check(wire.Calls.Last() == "GET /health" && wire.NoCredentialsSent, "health contract check sends no account credentials");
 foreach (var invalidHealth in new[] { "{}", "{\"status\":\"ok\",\"service\":\"other\",\"contractVersion\":1,\"authentication\":\"development\"}", "{\"status\":\"ok\",\"service\":\"holeinone\",\"contractVersion\":2,\"authentication\":\"development\"}", "{\"status\":\"ok\",\"service\":\"holeinone\",\"contractVersion\":1,\"authentication\":\"accounts\"}" })
 {
     using var healthWire = new FakeBackend { HealthBody = invalidHealth };
@@ -69,13 +70,13 @@ sealed class FakeBackend : HttpMessageHandler
 {
     public string HealthBody = "{\"status\":\"ok\",\"service\":\"holeinone\",\"contractVersion\":2,\"authentication\":\"accounts\"}";
     public HttpStatusCode HealthStatus = HttpStatusCode.OK;
-    public bool Authorized = true;
+    public bool NoCredentialsSent = true;
     public readonly List<string> Calls = new();
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         Calls.Add(request.Method + " " + request.RequestUri.PathAndQuery);
-        Authorized &= request.Headers.Authorization == null;
+        NoCredentialsSent &= request.Headers.Authorization == null;
         if (request.RequestUri.AbsolutePath != "/health") throw new Exception("Unexpected API request");
         return Task.FromResult(new HttpResponseMessage(HealthStatus) { Content = new StringContent(HealthBody, Encoding.UTF8, "application/json") });
     }

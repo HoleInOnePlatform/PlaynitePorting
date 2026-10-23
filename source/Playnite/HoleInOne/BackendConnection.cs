@@ -18,7 +18,7 @@ namespace Playnite.HoleInOne
 
         public async Task CheckDevelopmentHealthAsync(CancellationToken cancellationToken)
         {
-            var health = await SendAsync<BackendHealth>(HttpMethod.Get, "health", null, cancellationToken);
+            var health = await SendAsync<BackendHealth>(HttpMethod.Get, "health", null, cancellationToken, 12);
             if (health.Status != "ok" || health.Service != "holeinone" || health.ContractVersion != 2
                 || health.Authentication != "accounts")
                 throw new InvalidDataException("서버와 앱의 계약 버전이 일치하지 않습니다. 서비스 주소와 앱 업데이트를 확인해 주세요.");
@@ -29,7 +29,7 @@ namespace Playnite.HoleInOne
             if (client.BaseAddress.Scheme != "https" && !client.BaseAddress.IsLoopback)
                 throw new InvalidOperationException("로그인 서버에 안전하게 연결할 수 없습니다.");
             var result = await SendAsync<AccountLogin>(HttpMethod.Post, "v1/holeinone/auth/login",
-                new { username, password }, cancellationToken);
+                new { username, password }, cancellationToken, 30);
             if (string.IsNullOrWhiteSpace(result.AccessToken) || result.AccessToken.Length != 64 ||
                 result.AccessToken.Any(c => !Uri.IsHexDigit(c)) || result.ExpiresAt <= DateTimeOffset.UtcNow ||
                 string.IsNullOrWhiteSpace(result.AccountId) || string.IsNullOrWhiteSpace(result.Username))
@@ -41,7 +41,7 @@ namespace Playnite.HoleInOne
         {
             if (client.BaseAddress.Scheme != "https" && !client.BaseAddress.IsLoopback)
                 throw new InvalidOperationException("회원가입 서버에 안전하게 연결할 수 없습니다.");
-            var result = await SendAsync<AccountLogin>(HttpMethod.Post, "v1/holeinone/auth/register", new { username, password }, ct);
+            var result = await SendAsync<AccountLogin>(HttpMethod.Post, "v1/holeinone/auth/register", new { username, password }, ct, 30);
             if (string.IsNullOrWhiteSpace(result.AccessToken) || result.AccessToken.Length != 64 ||
                 result.AccessToken.Any(c => !Uri.IsHexDigit(c)) || result.ExpiresAt <= DateTimeOffset.UtcNow ||
                 string.IsNullOrWhiteSpace(result.AccountId) || string.IsNullOrWhiteSpace(result.Username))
@@ -68,7 +68,7 @@ namespace Playnite.HoleInOne
         public async Task<PreparedCloudSession> PrepareSessionAsync(string requestId, CancellationToken ct)
         {
             ValidateId(requestId);
-            var prepared = await SendAsync<PreparedCloudSession>(HttpMethod.Post, "v1/holeinone/sessions/prepare", new { requestId }, ct).ConfigureAwait(false);
+            var prepared = await SendAsync<PreparedCloudSession>(HttpMethod.Post, "v1/holeinone/sessions/prepare", new { requestId }, ct, 40).ConfigureAwait(false);
             ValidateId(prepared.SessionId);
             ValidateId(prepared.GameId);
             if (prepared.ExpiresAt <= DateTimeOffset.UtcNow) throw new PreparedSessionExpiredException();
@@ -78,7 +78,7 @@ namespace Playnite.HoleInOne
         public async Task<CloudSession> PlayPreparedSessionAsync(string sessionId, string gameId, CancellationToken ct)
         {
             ValidateId(gameId);
-            var session = await SendAsync<CloudSession>(HttpMethod.Post, SessionPath(sessionId) + "/play", new { gameId }, ct).ConfigureAwait(false);
+            var session = await SendAsync<CloudSession>(HttpMethod.Post, SessionPath(sessionId) + "/play", new { gameId }, ct, 40).ConfigureAwait(false);
             if (session.SessionId != sessionId || session.GameId != gameId) throw new InvalidDataException("요청한 게임과 준비된 세션이 다릅니다.");
             // A local backend may advertise its public HTTPS tunnel for cloud callbacks.
             // Never navigate that advertised origin: use the configured loopback server instead.
@@ -226,16 +226,14 @@ namespace Playnite.HoleInOne
             }
         }
 
-        private async Task<T> SendAsync<T>(HttpMethod method, string path, object body, CancellationToken cancellationToken)
+        private async Task<T> SendAsync<T>(HttpMethod method, string path, object body, CancellationToken cancellationToken, int timeoutSeconds = 20)
         {
             int? status = null;
             try
             {
                 using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
                 {
-                    var seconds = path == "health" ? 12 : path.Contains("/auth/") ? 30 :
-                        path.EndsWith("/prepare", StringComparison.Ordinal) || path.EndsWith("/play", StringComparison.Ordinal) ? 40 : 20;
-                    timeout.CancelAfter(TimeSpan.FromSeconds(seconds));
+                    timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
                     return await SendCoreAsync<T>(method, path, body, timeout.Token, value => status = value).ConfigureAwait(false);
                 }
             }

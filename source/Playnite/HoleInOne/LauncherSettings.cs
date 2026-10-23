@@ -13,6 +13,7 @@ namespace Playnite.HoleInOne
         [JsonIgnore]
         public bool CanChangeDevelopmentBackend { get; private set; }
         [JsonIgnore] public string BackendAddressSource { get; private set; }
+        [JsonIgnore] public string DevelopmentAddressWarning { get; private set; }
         // Retain the serialized name for existing Epic installations/settings.
         public string DownloadDirectory { get; set; } = Path.Combine(
             Environment.GetEnvironmentVariable("ProgramW6432") ?? Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Epic Games");
@@ -78,8 +79,17 @@ namespace Playnite.HoleInOne
             if (!serviceRequired)
             {
                 var addressPath = Path.Combine(Path.GetDirectoryName(settingsPath), "holeinone.development-address.json");
-                var address = DevelopmentServiceAddress.Load(addressPath);
-                if (address != null) { settings.BackendUrl = address.BackendUrl; settings.BackendAddressSource = "holeinone.development-address.json"; }
+                try
+                {
+                    var address = DevelopmentServiceAddress.Load(addressPath);
+                    if (address != null) { settings.BackendUrl = address.BackendUrl; settings.BackendAddressSource = "holeinone.development-address.json"; }
+                }
+                catch (Exception error) when (error is JsonException || error is InvalidDataException || error is IOException || error is UnauthorizedAccessException)
+                {
+                    settings.DevelopmentAddressWarning = "저장된 개발 서버 주소를 읽을 수 없어 기본 주소로 돌아왔습니다. 설정에서 개발 서버 주소를 다시 입력해 주세요.";
+                }
+                if (service == null && settings.BackendAddressSource == "local development default")
+                    settings.DevelopmentAddressWarning = settings.DevelopmentAddressWarning ?? "로컬 개발 기본 주소를 사용합니다. 실행 중인 서버가 없다면 설정에서 개발 서버 주소를 입력해 주세요.";
             }
             return settings;
         }

@@ -52,7 +52,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 var key = BuiltinStoreLibrary.GameKey(game);
                 var settings = LauncherSettings.Load();
                 if (!timing.Run("ensure_login", () => LauncherLogin.EnsureSignedIn(settings))) return;
-                if ((!SteamLinkContext.IsConfigured || !(await SteamLinkContext.RefreshAsync(play.Closed.Token)).IsLinked)) throw new SteamLinkException("steam_link_required");
+                if (!SteamLinkContext.IsConfigured || !(await SteamLinkContext.RefreshAsync(play.Closed.Token)).IsLinked) throw new SteamLinkException("steam_link_required");
                 backend = new BackendConnection(settings.BackendUrl, LauncherLogin.TokenFor(settings));
                 preparation = CloudPreparation.Get(settings);
                 LogManager.GetLogger().Info("[HIO-PERF] link trace=" + timing.Id + " preparation=" + preparation.TimingId);
@@ -110,7 +110,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 try { await timing.RunAsync("notify_download_complete", () => backend.DownloadCompleteAsync(session.SessionId, play.Closed.Token)); }
                 catch (Exception error) when (!play.Closed.IsCancellationRequested)
                 {
-                    LogManager.GetLogger().Warn("Download completion notification failed (" + error.GetType().Name + ").");
+                    LogManager.GetLogger().Warn("Download completion notification failed (" + BackendConnection.DescribeFailure(error, CancellationToken.None) + ").");
                     prompt.SetBusy(false, "서버에 다운로드 완료를 알리지 못했습니다. 웹뷰는 60분 후 종료됩니다.");
                 }
 
@@ -139,7 +139,7 @@ namespace Playnite.DesktopApp.HoleInOne
                     catch (OperationCanceledException error) when (play.Closed.IsCancellationRequested) { handoffTotal.Fail(error); throw; }
                     catch (Exception error)
                     {
-                        LogManager.GetLogger().Warn("Save handoff failed for session " + session.SessionId + " (" + error.GetType().Name + ").");
+                        LogManager.GetLogger().Warn("Save handoff failed for session " + session.SessionId + " (" + BackendConnection.DescribeFailure(error, CancellationToken.None) + ").");
                         handoffTotal.Fail(error);
                         clicked = new TaskCompletionSource<bool>();
                         prompt.SetBusy(false, "전환 실패: " + error.Message + " 로컬 게임은 실행하지 않았습니다.");
@@ -174,10 +174,10 @@ namespace Playnite.DesktopApp.HoleInOne
                     if (backend != null && session != null && localGame == null)
                     {
                         try { await backend.StopCloudAsync(session.SessionId, CancellationToken.None); }
-                        catch (Exception error) { LogManager.GetLogger().Warn("Cloud session termination request failed (" + error.GetType().Name + ")."); }
+                        catch (Exception error) { LogManager.GetLogger().Warn("Cloud session termination request failed (" + BackendConnection.DescribeFailure(error, CancellationToken.None) + ")."); }
                     }
                     try { if (session != null && preparation != null) await preparation.PlayFinishedAsync(); }
-                    catch (Exception error) { LogManager.GetLogger().Warn("Prepared session cleanup deferred (" + error.GetType().Name + ")."); }
+                    catch (Exception error) { LogManager.GetLogger().Warn("Prepared session cleanup deferred (" + BackendConnection.DescribeFailure(error, CancellationToken.None) + ")."); }
                     backend?.Dispose();
                     play.Closed.Dispose();
                     ActiveStreamCount--;

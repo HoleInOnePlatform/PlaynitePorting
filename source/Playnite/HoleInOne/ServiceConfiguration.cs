@@ -39,7 +39,11 @@ namespace Playnite.HoleInOne
             value = value?.Trim();
             if (IPAddress.TryParse(value, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork
                 && value.Split('.').Length == 4)
+            {
+                if (!IPAddress.IsLoopback(ip))
+                    throw new InvalidDataException("공인·사설 IP는 https://를 포함한 전체 서비스 주소를 입력해 주세요. IP 단독 입력은 루프백 개발 주소만 지원합니다.");
                 value = "http://" + ip + ":5010/";
+            }
             if (!Uri.TryCreate(value, UriKind.Absolute, out var address)
                 || (address.Scheme != "https" && !(address.Scheme == "http" && address.IsLoopback)) || address.AbsolutePath != "/"
                 || address.UserInfo.Length != 0 || address.Query.Length != 0 || address.Fragment.Length != 0)
