@@ -78,6 +78,8 @@ try
 }
 catch(Exception error)
 {
+    // Only known codes and exception type names are logged; exception messages can contain secrets.
+    SteamDiagnostics.Write("worker", error is ProbeFailure failure ? failure.Code : error.GetType().Name);
     Emit(new{type="error",code=error is ProbeFailure p ? p.Code : error is OperationCanceledException ? "cancelled_or_timeout" : "steam_link_failed"});
     Environment.ExitCode=1;
 }

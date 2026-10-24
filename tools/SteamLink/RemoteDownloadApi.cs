@@ -43,6 +43,7 @@ internal sealed class RemoteDownloadApi(HttpClient http, string accessToken)
 
     private async Task<JsonDocument> SendAsync(string method, Dictionary<string, string>? parameters, CancellationToken ct, bool mutation = false)
     {
+        SteamDiagnostics.Write(method, "started");
         parameters ??= new();
         parameters["access_token"] = accessToken;
         // Read methods use GET as required by Web API. Never expose transport exceptions/URLs.
@@ -54,6 +55,9 @@ internal sealed class RemoteDownloadApi(HttpClient http, string accessToken)
         try
         {
             using var response = await http.SendAsync(request, ct);
+            var diagnosticResult = response.Headers.TryGetValues("x-eresult", out var diagnosticValues) &&
+                int.TryParse(diagnosticValues.FirstOrDefault(), out var numericResult) ? (int?)numericResult : null;
+            SteamDiagnostics.Write(method, "response", diagnosticResult, (int)response.StatusCode);
             if (!response.IsSuccessStatusCode) throw new ProbeFailure("REMOTE_REQUEST_FAILED");
             var hasResult = response.Headers.TryGetValues("x-eresult", out var values);
             if (hasResult && values!.SingleOrDefault() != "1") throw new ProbeFailure("REMOTE_REQUEST_FAILED");
@@ -64,7 +68,7 @@ internal sealed class RemoteDownloadApi(HttpClient http, string accessToken)
             { parsed.Dispose(); throw new ProbeFailure("REMOTE_UNCONFIRMED"); }
             return parsed;
         }
-        catch (HttpRequestException) { throw new ProbeFailure("REMOTE_REQUEST_FAILED"); }
-        catch (JsonException) { throw new ProbeFailure("REMOTE_UNCONFIRMED"); }
+        catch (HttpRequestException) { SteamDiagnostics.Write(method, "transport_failed"); throw new ProbeFailure("REMOTE_REQUEST_FAILED"); }
+        catch (JsonException) { SteamDiagnostics.Write(method, "invalid_json"); throw new ProbeFailure("REMOTE_UNCONFIRMED"); }
     }
 }
