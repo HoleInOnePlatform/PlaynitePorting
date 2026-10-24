@@ -1,5 +1,9 @@
 # HoleInOne 개발 실행
 
+## 게임별 Application과 요청 시 생성 (2026-10-24)
+
+앱 시작 웜업을 제거했다. Play의 gameId로 Backend가 Application을 선택하며 준비 창에서 취소할 수 있다. API 계약 3 앱·Backend 동반 배포와 설정 이전은 [실행 흐름](V5_PREWARM.md)을 따른다. 새 게임의 실제 AWS 이미지·매핑은 별도 구성한다.
+
 ## Steam 세이브 직접 업로드·구형 모드 전환 제거 (2026-10-22)
 
 - Steam Cloud 직접 업로드, 업로드 전용 QR 계정 연결 및 보조 프로그램을 제거함. 사용자별 Steam 연결·QR 로그인은 유지함.

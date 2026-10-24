@@ -26,7 +26,7 @@ using var wire = new FakeBackend();
 using var client = new BackendConnection("http://localhost:5010", handler: wire);
 await client.CheckDevelopmentHealthAsync(token);
 Check(wire.Calls.Last() == "GET /health" && wire.NoCredentialsSent, "health contract check sends no account credentials");
-foreach (var invalidHealth in new[] { "{}", "{\"status\":\"ok\",\"service\":\"other\",\"contractVersion\":1,\"authentication\":\"development\"}", "{\"status\":\"ok\",\"service\":\"holeinone\",\"contractVersion\":2,\"authentication\":\"development\"}", "{\"status\":\"ok\",\"service\":\"holeinone\",\"contractVersion\":1,\"authentication\":\"accounts\"}" })
+foreach (var invalidHealth in new[] { "{}", "{\"status\":\"ok\",\"service\":\"other\",\"contractVersion\":1,\"authentication\":\"development\"}", "{\"status\":\"ok\",\"service\":\"holeinone\",\"contractVersion\":2,\"authentication\":\"development\"}", "{\"status\":\"ok\",\"service\":\"holeinone\",\"contractVersion\":2,\"authentication\":\"accounts\"}" })
 {
     using var healthWire = new FakeBackend { HealthBody = invalidHealth };
     using var healthClient = new BackendConnection("http://localhost:5010", handler: healthWire);
@@ -68,7 +68,7 @@ Console.WriteLine($"{count} checks passed.");
 
 sealed class FakeBackend : HttpMessageHandler
 {
-    public string HealthBody = "{\"status\":\"ok\",\"service\":\"holeinone\",\"contractVersion\":2,\"authentication\":\"accounts\"}";
+    public string HealthBody = "{\"status\":\"ok\",\"service\":\"holeinone\",\"contractVersion\":3,\"authentication\":\"accounts\"}";
     public HttpStatusCode HealthStatus = HttpStatusCode.OK;
     public bool NoCredentialsSent = true;
     public readonly List<string> Calls = new();

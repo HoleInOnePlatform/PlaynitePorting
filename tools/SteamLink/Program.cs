@@ -132,9 +132,7 @@ async Task CloudAsync()
     }
     catch(Exception error)
     {
-        var status=error is ProbeFailure failure ? failure.Code switch {
-            "STEAM_LOGON_REJECTED" or "NATIVE_LOGIN_NOT_CONFIRMED" => "reauth_required",
-            "NATIVE_ACCOUNT_MISMATCH" or "STEAM_ACCOUNT_MISMATCH" => "account_mismatch",_=>"failed"} : "failed";
+        var status=CloudLoginStatus.ForFailure((error as ProbeFailure)?.Code);
         try { using var report=await http.PostAsJsonAsync(endpoint+"/steam-status",new{status,actualSteamId=(string?)null},CancellationToken.None); } catch(Exception) { }
         throw;
     }

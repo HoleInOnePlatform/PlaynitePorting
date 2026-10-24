@@ -75,6 +75,7 @@ static class SaveWorkflowChecks
                 throw new Exception("unexpected mutation or download");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(
                 JsonConvert.SerializeObject(new { requestId = ChangedId && Methods.Count > 1 ? "other" : "one", gameId = "steam-1",
+                    canRetry = RestartRecovery,
                     errorCode = RestartRecovery && Methods.Count == 1 ? "recovery_required" : null,
                     status = states[Math.Min(Methods.Count - 1, states.Length - 1)] })) });
         }

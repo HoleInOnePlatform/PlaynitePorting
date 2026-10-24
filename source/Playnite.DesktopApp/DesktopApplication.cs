@@ -235,7 +235,7 @@ namespace Playnite.DesktopApp
             }
 
             await HoleInOne.SteamSetup.OnStartupAsync();
-            HoleInOne.CloudPreparation.Begin();
+            HoleInOne.CloudPreparation.ResumeReceipts();
             CurrentNative.Exit += (sender, args) => HoleInOne.CloudPreparation.Shutdown();
 
             if (isFirstStart)
