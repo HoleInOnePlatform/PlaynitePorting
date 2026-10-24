@@ -36,6 +36,12 @@ namespace Playnite.HoleInOne
                 {
                     var code = (string)message["code"];
                     if (code == "cancelled_or_timeout") { ct.ThrowIfCancellationRequested(); throw new TimeoutException("Steam 연결 시간이 초과되었습니다."); }
+                    if (code != null && code.StartsWith("REMOTE_", StringComparison.Ordinal))
+                        throw new InvalidOperationException(code == "REMOTE_LOCAL_CLIENT_REQUIRED"
+                            ? "이 PC의 Steam을 실행하고 연결한 계정으로 로그인해 주세요. 설치·제거 요청으로 Steam 창을 자동 실행하지 않습니다."
+                            : code == "REMOTE_CLIENT_NOT_FOUND" || code == "REMOTE_CLIENT_AMBIGUOUS"
+                            ? "Steam 서버에서 이 PC를 확인하지 못했습니다. Steam 온라인 상태를 확인한 뒤 다시 시도해 주세요."
+                            : "Steam 서버가 설치·제거 요청을 확인하지 못했습니다. Steam 상태를 확인해 주세요. 로컬 실행 명령으로 재시도하지 않습니다.");
                     throw new SteamLinkException(code == "STEAM_LOGON_REJECTED" ? "steam_reauthentication_required" : "steam_validation_unavailable");
                 }
                 return message;
@@ -90,6 +96,25 @@ namespace Playnite.HoleInOne
             if((string)result["type"]!="library" || (string)result["steamId"]!=expected || !(result["games"] is JArray games))
                 throw new InvalidDataException("Steam 라이브러리 응답이 일치하지 않습니다.");
             return games;
+        }
+        public async Task RequestDownloadAsync(uint appId, bool uninstall, CancellationToken ct)
+        {
+            if (appId == 0) throw new ArgumentOutOfRangeException(nameof(appId));
+            var generation = SteamLinkContext.Generation;
+            await SteamLinkContext.RefreshAsync(ct).ConfigureAwait(false);
+            SteamLinkContext.RequireGeneration(generation);
+            if (!SteamLinkContext.HasLocalLogin) throw new SteamLinkException("steam_link_required");
+            var expected = SteamLinkContext.Current.SteamId;
+            if (LocalSteamAccount.RequireSteamId() != expected)
+                throw new InvalidOperationException("PC Steam 계정이 HoleInOne에 연결한 계정과 다릅니다.");
+            var operation = uninstall ? "uninstall" : "install";
+            ct.ThrowIfCancellationRequested();
+            Send(new { operation, appId, steamId = expected, tokenPath = SteamLinkContext.TokenPath });
+            var result = await ReadAsync(ct).ConfigureAwait(false);
+            SteamLinkContext.RequireGeneration(generation);
+            if ((string)result["type"] != "accepted" || (string)result["steamId"] != expected ||
+                (uint?)result["appId"] != appId || (string)result["operation"] != operation)
+                throw new InvalidDataException("Steam 설치·제거 응답이 요청과 일치하지 않습니다.");
         }
         public void Dispose()
         {

@@ -55,10 +55,8 @@ namespace Playnite.HoleInOne
         public static ulong Used(LauncherSettings settings, IEnumerable<Game> games)
         {
             settings.ValidateStorage();
-            var roots = new[] { Normalize(settings.SteamInstallDirectory), Normalize(settings.DownloadDirectory) }
-                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             ulong total = 0;
-            var installed = games.Where(g => g.IsInstalled && roots.Any(root => IsChild(root, g.InstallDirectory)))
+            var installed = games.Where(g => g.IsInstalled && g.PluginId == BuiltinStoreLibrary.EpicId && IsChild(settings.DownloadDirectory, g.InstallDirectory))
                 .GroupBy(g => Normalize(g.InstallDirectory), StringComparer.OrdinalIgnoreCase);
             foreach (var group in installed)
                 total = checked(total + RecordedSize(group.First()));
@@ -84,8 +82,7 @@ namespace Playnite.HoleInOne
                 var drive = Path.GetPathRoot(destination);
                 var games = api.Database.Games.ToList();
                 var eligible = games.Where(g => g.Id != incoming.Id && !settings.IsGameProtected(g.Id) && Idle(g) &&
-                    ((g.PluginId == BuiltinStoreLibrary.SteamId && IsChild(settings.SteamInstallDirectory, g.InstallDirectory)) ||
-                     (g.PluginId == BuiltinStoreLibrary.EpicId && IsChild(settings.DownloadDirectory, g.InstallDirectory))))
+                    (g.PluginId == BuiltinStoreLibrary.EpicId && IsChild(settings.DownloadDirectory, g.InstallDirectory)))
                     .Where(g => !games.Any(other => other.Id != g.Id && !string.IsNullOrWhiteSpace(other.InstallDirectory) &&
                         (string.Equals(Normalize(g.InstallDirectory), Normalize(other.InstallDirectory), StringComparison.OrdinalIgnoreCase) ||
                          IsChild(g.InstallDirectory, other.InstallDirectory) || IsChild(other.InstallDirectory, g.InstallDirectory))))

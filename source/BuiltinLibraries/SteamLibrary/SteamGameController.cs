@@ -9,7 +9,7 @@ using SteamKit2;
 using System.IO;
 using Playnite.SDK.Plugins;
 using SteamLibrary.Services;
-using Playnite.HoleInOne;
+using System.Collections.Generic;
 
 namespace SteamLibrary
 {
@@ -17,9 +17,8 @@ namespace SteamLibrary
     {
         private CancellationTokenSource watcherToken;
         private readonly IPlayniteAPI playniteApi;
-        private string requestedManifest;
-        private DateTime initialManifestWriteTime;
-        private IDisposable storageLease;
+        private Dictionary<string, DateTime> initialManifests;
+        private readonly CancellationTokenSource requestLifetime = new CancellationTokenSource();
 
         public SteamInstallController(Game game, IPlayniteAPI playniteApi) : base(game)
         {
@@ -30,6 +29,7 @@ namespace SteamLibrary
         public override void Dispose()
         {
             watcherToken?.Cancel();
+            requestLifetime.Cancel();
         }
 
         public override async void Install(InstallActionArgs args)
@@ -49,31 +49,24 @@ namespace SteamLibrary
                 }
                 else
                 {
-                    var settings = LauncherSettings.Load();
-                    var location = SteamInstallService.ConfiguredLocation(settings.SteamInstallDirectory);
-                    if (location == null)
+                    await Task.Run(() =>
                     {
-                        InvokeOnInstallationCancelled(new GameInstallationCancelledEventArgs());
-                        return;
-                    }
-                    storageLease = await StorageManagement.PrepareAsync(playniteApi, Game, Game.InstallSize ?? 0,
-                        settings, settings.SteamInstallDirectory);
-                    requestedManifest = Path.Combine(location.Path, "steamapps", $"appmanifest_{gameId.AppID}.acf");
-                    initialManifestWriteTime = File.GetLastWriteTimeUtc(requestedManifest);
-                    ProcessStarter.StartProcess(Steam.ClientExecPath, SteamInstallService.BuildArguments(gameId.AppID, location.Index));
+                        initialManifests = SteamInstallService.CaptureManifests(gameId.AppID, SteamLocalService.GetLibraryFolders());
+                    });
+                    using (var bridge = new Playnite.HoleInOne.SteamLinkBridge())
+                        await bridge.RequestDownloadAsync(gameId.AppID, false, requestLifetime.Token);
+                    requestLifetime.Token.ThrowIfCancellationRequested();
                     StartInstallWatcher();
                 }
             }
             catch (OperationCanceledException)
             {
-                storageLease?.Dispose(); storageLease = null;
                 InvokeOnInstallationCancelled(new GameInstallationCancelledEventArgs());
             }
             catch (Exception error)
             {
-                storageLease?.Dispose(); storageLease = null;
                 InvokeOnInstallationCancelled(new GameInstallationCancelledEventArgs());
-                playniteApi.Dialogs.ShowErrorMessage(error.Message, "HoleInOne · 저장공간 / 설치");
+                playniteApi.Dialogs.ShowErrorMessage(error.Message, "HoleInOne · 설치");
             }
         }
 
@@ -91,15 +84,18 @@ namespace SteamLibrary
                 while (true)
                 {
                     token.ThrowIfCancellationRequested();
-                    if (requestedManifest != null && File.Exists(requestedManifest) &&
-                        File.GetLastWriteTimeUtc(requestedManifest) != initialManifestWriteTime)
-                        requestAccepted = true;
                     if (!requestAccepted && requestTimer.Elapsed > TimeSpan.FromMinutes(2))
                         throw new TimeoutException("Steam이 다운로드 요청을 처리하지 못함. Steam 로그인 상태·게임 소유권·저장 공간을 확인한 뒤 다시 시도해 주세요.");
                     Playnite.SDK.Models.GameMetadata installedGame;
                     try
                     {
-                        installedGame = await Task.Run(() => SteamLocalService.GetInstalledGame(id.AppID), token);
+                        installedGame = await Task.Run(() =>
+                        {
+                            if (!requestAccepted)
+                                requestAccepted = SteamInstallService.HasManifestChanged(initialManifests,
+                                    SteamInstallService.CaptureManifests(id.AppID, SteamLocalService.GetLibraryFolders()));
+                            return SteamLocalService.GetInstalledGame(id.AppID);
+                        }, token);
                         readFailed = false;
                     }
                     catch (Exception error) when (error is IOException || error is UnauthorizedAccessException || error is FormatException)
@@ -129,18 +125,17 @@ namespace SteamLibrary
                     playniteApi.Dialogs.ShowErrorMessage(error.Message, "HoleInOne · 다운로드 시작 실패");
                 }
             }
-            finally { storageLease?.Dispose(); storageLease = null; }
         }
     }
 
     public class SteamUninstallController : UninstallController
     {
-        private CancellationTokenSource watcherToken;
+        private readonly CancellationTokenSource watcherToken = new CancellationTokenSource();
 
         public override Task UninstallAsync(UninstallActionArgs args)
         {
-            // Steam can block while forwarding the command to its running client.
-            // Keep process startup off the UI thread; the caller handles launch errors.
+            // The synchronous SDK entry point waits for a server acknowledgement.
+            // Keep it off the UI thread; the caller handles request errors.
             return Task.Run(() => Uninstall(args));
         }
 
@@ -169,36 +164,30 @@ namespace SteamLibrary
             else
             {
                 var requestTimer = Stopwatch.StartNew();
-                using (ProcessStarter.StartProcess(Steam.ClientExecPath, $"-silent +app_uninstall {gameId.AppID}")) { }
+                using (var bridge = new Playnite.HoleInOne.SteamLinkBridge())
+                    bridge.RequestDownloadAsync(gameId.AppID, true, watcherToken.Token).GetAwaiter().GetResult();
                 LogManager.GetLogger().Info($"Steam uninstall request dispatched in {requestTimer.ElapsedMilliseconds} ms.");
-                StartUninstallWatcher();
+                WaitForUninstallAsync(gameId).GetAwaiter().GetResult();
             }
         }
 
-        public async void StartUninstallWatcher()
+        private async Task WaitForUninstallAsync(GameID id)
         {
-            watcherToken = new CancellationTokenSource();
-            var id = Game.ToSteamGameID();
-
-            await Task.Run(async () =>
+            var token = watcherToken.Token;
+            var deadline = DateTime.UtcNow.AddMinutes(5);
+            while (DateTime.UtcNow < deadline)
             {
-                while (true)
+                token.ThrowIfCancellationRequested();
+                // Presence in any registered library prevents a false completion.
+                var present = SteamInstallService.CaptureManifests(id.AppID, SteamLocalService.GetLibraryFolders()).Count != 0;
+                if (!present)
                 {
-                    if (watcherToken.IsCancellationRequested)
-                    {
-                        return;
-                    }
-
-                    var installed = SteamLocalService.GetInstalledGames(false);
-                    if (!installed.ContainsKey(id))
-                    {
-                        InvokeOnUninstalled(new GameUninstalledEventArgs());
-                        return;
-                    }
-
-                    await Task.Delay(5_000);
+                    InvokeOnUninstalled(new GameUninstalledEventArgs());
+                    return;
                 }
-            });
+                await Task.Delay(1000, token).ConfigureAwait(false);
+            }
+            throw new TimeoutException("Steam 제거 완료를 확인하지 못했습니다. Steam 다운로드 상태를 확인해 주세요.");
         }
     }
 
