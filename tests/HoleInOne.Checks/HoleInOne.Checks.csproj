@@ -13,6 +13,7 @@
     <Compile Include="../../source/Playnite/HoleInOne/ExportReceiptOutbox.cs" Link="ExportReceiptOutbox.cs" />
     <Compile Include="PrewarmChecks.cs" />
     <Compile Include="SteamLinkChecks.cs" />
+    <Compile Include="../../tools/SteamLink/CloudLoginStatus.cs" Link="CloudLoginStatus.cs" />
     <Compile Include="LocalDownloadChecks.cs" />
     <Compile Include="HandoffRecoveryChecks.cs" />
     <Compile Include="SaveWorkflowChecks.cs" />

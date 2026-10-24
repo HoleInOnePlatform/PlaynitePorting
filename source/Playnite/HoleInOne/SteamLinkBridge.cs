@@ -80,8 +80,9 @@ namespace Playnite.HoleInOne
         public async Task<JArray> LibraryAsync(CancellationToken ct)
         {
             var generation = SteamLinkContext.Generation;
-            await SteamLinkContext.RefreshAsync(ct).ConfigureAwait(false);
-            if(!SteamLinkContext.HasLocalLogin) throw new SteamLinkException("steam_link_required");
+            var link = await SteamLinkContext.RefreshAsync(ct).ConfigureAwait(false);
+            SteamLinkContext.RequireGeneration(generation);
+            link.RequireLibraryConnection(SteamLinkContext.HasLocalLogin);
             var expected=SteamLinkContext.Current.SteamId;
             Send(new{operation="library",steamId=expected,tokenPath=SteamLinkContext.TokenPath});
             var result=await ReadAsync(ct).ConfigureAwait(false);

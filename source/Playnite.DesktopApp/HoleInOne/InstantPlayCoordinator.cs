@@ -57,7 +57,8 @@ namespace Playnite.DesktopApp.HoleInOne
                 var key = BuiltinStoreLibrary.GameKey(game);
                 var settings = LauncherSettings.Load();
                 if (!timing.Run("ensure_login", () => LauncherLogin.EnsureSignedIn(settings))) return;
-                if (!SteamLinkContext.IsConfigured || !(await SteamLinkContext.RefreshAsync(play.Closed.Token)).IsLinked) throw new SteamLinkException("steam_link_required");
+                if (!SteamLinkContext.IsConfigured) throw new SteamLinkException("steam_link_required");
+                (await SteamLinkContext.RefreshAsync(play.Closed.Token)).RequireCloudConnection();
                 play.Preparation = new GamePreparationWindow(game.Name);
                 play.Preparation.Closed += closed;
                 play.Preparation.Show();
