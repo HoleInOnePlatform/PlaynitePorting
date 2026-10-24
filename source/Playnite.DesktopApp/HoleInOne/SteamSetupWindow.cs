@@ -80,7 +80,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 }
                 await RefreshAsync();
                 status.Text+="\n연결 정보를 저장했습니다. 다음 실행부터 클라우드 로그인에 재사용합니다.";
-                CloudPreparation.Begin();
+                CloudPreparation.ResumeReceipts();
             }
             catch(OperationCanceledException) { if(!closed.IsCancellationRequested)status.Text="인증이 취소되었거나 시간이 만료되었습니다. 서버 저장 요청 이후 취소했다면 다시 열어 연결 상태를 확인해 주세요."; }
             catch(Exception error) { if(!closed.IsCancellationRequested)status.Text=Friendly(error); }

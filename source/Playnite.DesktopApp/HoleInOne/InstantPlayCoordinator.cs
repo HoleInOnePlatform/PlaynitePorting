@@ -15,7 +15,7 @@ namespace Playnite.DesktopApp.HoleInOne
     public sealed class InstantPlayCoordinator
     {
         public static int ActiveStreamCount { get; private set; }
-        private sealed class ActivePlay { public Playnite.WebView.WebView View; public readonly CancellationTokenSource Closed = new CancellationTokenSource(); }
+        private sealed class ActivePlay { public Playnite.WebView.WebView View; public GamePreparationWindow Preparation; public readonly CancellationTokenSource Closed = new CancellationTokenSource(); }
         private readonly Dictionary<Guid, ActivePlay> active = new Dictionary<Guid, ActivePlay>();
         private readonly DesktopGamesEditor editor;
         private readonly Action<Game> launch;
@@ -23,7 +23,7 @@ namespace Playnite.DesktopApp.HoleInOne
         public bool Focus(Guid id)
         {
             if (!active.TryGetValue(id, out var play)) return false;
-            play.View?.WindowHost.Activate();
+            if (play.Preparation != null) play.Preparation.Activate(); else play.View?.WindowHost.Activate();
             return true;
         }
 
@@ -31,6 +31,11 @@ namespace Playnite.DesktopApp.HoleInOne
         public async Task StartAsync(Game game)
         {
             if (Focus(game.Id)) return;
+            if (ActiveStreamCount > 0)
+            {
+                MessageBox.Show("다른 클라우드 게임을 준비하거나 실행하고 있습니다. 현재 게임 창을 닫은 뒤 다시 시도해 주세요.", "HoleInOne", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
             var timing = new PerformanceTrace("cloud_entry", line => LogManager.GetLogger().Info(line));
             var entryTiming = timing.Begin("entry_until_launch_allowed");
             var visibleTiming = timing.Begin("entry_until_game_running");
@@ -53,6 +58,9 @@ namespace Playnite.DesktopApp.HoleInOne
                 var settings = LauncherSettings.Load();
                 if (!timing.Run("ensure_login", () => LauncherLogin.EnsureSignedIn(settings))) return;
                 if (!SteamLinkContext.IsConfigured || !(await SteamLinkContext.RefreshAsync(play.Closed.Token)).IsLinked) throw new SteamLinkException("steam_link_required");
+                play.Preparation = new GamePreparationWindow(game.Name);
+                play.Preparation.Closed += closed;
+                play.Preparation.Show();
                 backend = new BackendConnection(settings.BackendUrl, LauncherLogin.TokenFor(settings));
                 preparation = CloudPreparation.Get(settings);
                 LogManager.GetLogger().Info("[HIO-PERF] link trace=" + timing.Id + " preparation=" + preparation.TimingId);
@@ -69,6 +77,10 @@ namespace Playnite.DesktopApp.HoleInOne
                     LogManager.GetLogger().Info("[HIO-PERF] link trace=" + timing.Id + " preparation=" + preparation.TimingId);
                     session = await timing.RunAsync("prepare_and_claim_session", () => preparation.PlayAsync(key, play.Closed.Token));
                 }
+                play.Closed.Token.ThrowIfCancellationRequested();
+                play.Preparation.Closed -= closed;
+                play.Preparation.Close();
+                play.Preparation = null;
                 var receipts = new ExportReceipts(settings);
                 receipts.Start();
                 LogManager.GetLogger().Info("[HIO-PERF] link trace=" + timing.Id + " session=" + session.SessionId);
@@ -166,6 +178,8 @@ namespace Playnite.DesktopApp.HoleInOne
                 using (var cleanupTiming = (handoffTiming ?? timing).Begin("close_view_and_cleanup"))
                 {
                     play.Closed.Cancel();
+                    if (play.Preparation != null)
+                    { play.Preparation.Closed -= closed; play.Preparation.Close(); play.Preparation = null; }
                     prompt?.Dispose();
                     downloadNotice?.Dispose();
                     if (play.View != null) { play.View.WindowHost.Closed -= closed; play.View.Dispose(); }

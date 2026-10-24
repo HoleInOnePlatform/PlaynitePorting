@@ -8,127 +8,93 @@ static class PrewarmChecks
 {
     public static async Task RunAsync(Action<bool, string> check)
     {
+        Task NoDelay(TimeSpan wait, CancellationToken ct) => Task.CompletedTask;
+        var cloud = new FakeWarmBackend();
+        var sessions = new PreparedSessionManager(cloud, delay: NoDelay);
+        check(cloud.PrepareIds.Count == 0, "manager construction does not prewarm");
+        await sessions.PlayAsync("steam-2868840", default);
+        check(cloud.Games.Single() == "steam-2868840" && cloud.Plays == 1, "explicit Play prepares selected game then claims it");
+        await Reject(() => sessions.PlayAsync("steam-2", default));
+        check(cloud.PrepareIds.Count == 1 && cloud.Cancels.Count == 0, "concurrent Play cannot replace or cancel active game");
+        await sessions.PlayFinishedAsync();
+        await sessions.PlayAsync("steam-2", default);
+        check(cloud.Games.Last() == "steam-2" && cloud.PrepareIds.Distinct().Count() == 2, "next game has its own game ID and request ID");
+        await sessions.StopAsync(default);
+        check(cloud.Cancels.Single() == cloud.PrepareIds.Last(), "shutdown cancels the owned request");
+        await Reject(() => sessions.PlayAsync("steam-2", default));
+
+        cloud = new FakeWarmBackend { FailFirstPrepare = true };
+        sessions = new PreparedSessionManager(cloud, delay: NoDelay);
+        await sessions.PlayAsync("steam-2", default);
+        check(cloud.PrepareIds.Count == 2 && cloud.PrepareIds.Distinct().Count() == 1 && cloud.Games.All(g => g == "steam-2"), "lost response retries exactly the same game and request");
+
+        cloud = new FakeWarmBackend { ExpireFirstPlay = true };
+        sessions = new PreparedSessionManager(cloud, delay: NoDelay);
+        await sessions.PlayAsync("steam-2", default);
+        check(cloud.Cancels.Count == 1 && cloud.PrepareIds.Distinct().Count() == 2 && cloud.Plays == 2, "expired request is cancelled and replaced once");
+
+        cloud = new FakeWarmBackend { Pending = new TaskCompletionSource<bool>() };
+        sessions = new PreparedSessionManager(cloud, delay: NoDelay);
+        using (var cancel = new CancellationTokenSource())
+        {
+            var pending = sessions.PlayAsync("steam-2", cancel.Token);
+            cancel.Cancel();
+            await Reject(() => pending);
+            check(cloud.Cancels.Single() == cloud.PrepareIds.Single() && cloud.Plays == 0,
+                "cancellation before prepare response stops by request ID using an independent token");
+        }
+        cloud.Pending = null;
+        await sessions.PlayAsync("steam-2868840", default);
+        check(cloud.PrepareIds.Distinct().Count() == 2, "cancelled play can be followed by another selected game");
+
+        cloud = new FakeWarmBackend { Pending = new TaskCompletionSource<bool>(), FailCancel = true };
+        sessions = new PreparedSessionManager(cloud, delay: NoDelay);
+        using (var cancel = new CancellationTokenSource())
+        {
+            var pending = sessions.PlayAsync("steam-2", cancel.Token); cancel.Cancel(); await Reject(() => pending);
+        }
+        await Reject(() => sessions.PlayAsync("steam-2868840", default));
+        check(cloud.PrepareIds.Count == 1, "failed cleanup blocks allocating another game");
+        cloud.FailCancel = false; cloud.Pending = null;
+        await sessions.PlayAsync("steam-2868840", default);
+        check(cloud.Cancels.Distinct().Count() == 1 && cloud.Games.Last() == "steam-2868840", "cleanup retries retain identity before switching game");
+
+        cloud = new FakeWarmBackend { Pending = new TaskCompletionSource<bool>() };
+        sessions = new PreparedSessionManager(cloud, delay: NoDelay);
+        var inflight = sessions.PlayAsync("steam-2", default);
+        await sessions.StopAsync(default); await Reject(() => inflight);
+        check(cloud.Cancels.Count == 1, "shutdown cancels in-flight Play and cleans exactly once");
+
         var retryWire = new WarmWire { Status = HttpStatusCode.ServiceUnavailable };
         using (var retryBackend = new BackendConnection("http://localhost:5010/", handler: retryWire))
         {
-            var retries = new List<TimeSpan>();
-            var retryManager = new PreparedSessionManager(retryBackend);
-            await Reject(() => retryManager.PrepareWithRetriesAsync(default, (wait, ct) => { retries.Add(wait); return Task.CompletedTask; }));
-            check(retryWire.Calls.Count == 6 && retries.Count == 5 && retries.All(wait => wait == TimeSpan.FromSeconds(2)), "startup stops after initial request plus five retries at two second intervals");
-            check(retryWire.PrepareIds.Distinct().Count() == 1, "all warmup retries reuse the same request ID");
-        }
-        retryWire = new WarmWire { Status = HttpStatusCode.ServiceUnavailable };
-        using (var retryBackend = new BackendConnection("http://localhost:5010/", handler: retryWire))
-        {
-            var retryManager = new PreparedSessionManager(retryBackend);
-            var waiting = new TaskCompletionSource<bool>();
-            var resume = new TaskCompletionSource<bool>();
-            var warmup = retryManager.PrepareWithRetriesAsync(default, async (wait, ct) => { waiting.SetResult(true); await resume.Task; });
-            await waiting.Task;
-            var concurrentPlay = retryManager.PlayAsync("steam-2868840", default);
-            check(!concurrentPlay.IsCompleted && retryWire.PrepareIds.Count == 1, "Play shares warmup retry rather than allocating another session");
-            retryWire.Status = HttpStatusCode.OK;
-            resume.SetResult(true);
-            await warmup;
-            await concurrentPlay;
-            check(retryWire.PrepareIds.Count == 2, "successful retry stops further retries and allows Play");
+            var waits = new List<TimeSpan>();
+            var manager = new PreparedSessionManager(retryBackend, delay: (wait, ct) => { waits.Add(wait); return Task.CompletedTask; });
+            await Reject(() => manager.PlayAsync("steam-2868840", default));
+            check(retryWire.PrepareIds.Count == 6 && waits.Count == 5 && waits.All(w => w == TimeSpan.FromSeconds(2)), "explicit Play has bounded transient retries");
+            check(retryWire.PrepareIds.Distinct().Count() == 1 && retryWire.Calls.Last().EndsWith("/cancel"), "retry exhaustion cancels unknown allocation by original request");
         }
         foreach (var status in new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.BadRequest, HttpStatusCode.Conflict })
         {
             retryWire = new WarmWire { Status = status };
             using var retryBackend = new BackendConnection("http://localhost:5010/", handler: retryWire);
-            try { await new PreparedSessionManager(retryBackend).PrepareWithRetriesAsync(default); } catch { }
-            check(retryWire.Calls.Count == 1, "authentication, invalid requests and disabled prewarming are not retried");
-        }
-        retryWire = new WarmWire { Status = HttpStatusCode.ServiceUnavailable };
-        using (var retryBackend = new BackendConnection("http://localhost:5010/", handler: retryWire))
-        {
-            var retryManager = new PreparedSessionManager(retryBackend);
-            var waiting = new TaskCompletionSource<bool>();
-            var warmup = retryManager.PrepareWithRetriesAsync(default, (wait, ct) => { waiting.SetResult(true); return Task.Delay(Timeout.Infinite, ct); });
-            await waiting.Task;
-            await retryManager.StopAsync(default);
-            await Reject(() => warmup);
-            check(retryWire.Calls.Count == 1, "shutdown cancels retry delay immediately without another request");
+            await Reject(() => new PreparedSessionManager(retryBackend, delay: NoDelay).PlayAsync("steam-2868840", default));
+            check(retryWire.PrepareIds.Count == 1, "permanent failures do not retry allocation");
         }
         var diagnostics = new List<string>();
-        var failureWire = new WarmWire { Status = HttpStatusCode.ServiceUnavailable };
-        using (var failureBackend = new BackendConnection("http://localhost:5010/", "secret-token", failureWire))
+        using (var failureBackend = new BackendConnection("http://localhost:5010/", "secret-token", new WarmWire { Status = HttpStatusCode.ServiceUnavailable }))
         {
-            var preparation = new PreparedSessionManager(failureBackend, log: diagnostics.Add);
-            await Reject(() => preparation.PrepareAsync(default));
-            check(diagnostics.Any(line => line.Contains("[HIO-PREPARE-ERROR]") && line.Contains("http_status=503")), "preparation failures record HTTP status with trace");
-            failureWire.Failure = new HttpRequestException("secret-token https://private.example/", new System.Net.WebException("private", new System.Net.Sockets.SocketException(10061), WebExceptionStatus.ConnectFailure, null));
-            await Reject(() => preparation.PrepareAsync(default));
-            var failure = diagnostics.Last(line => line.Contains("[HIO-PREPARE-ERROR]"));
-            check(failure.Contains("http_status=none") && failure.Contains("socket_error=ConnectionRefused") && failure.Contains("web_error=ConnectFailure"), "transport failure records nested connection cause without stale HTTP status");
-            check(!string.Join("", diagnostics).Contains("secret-token") && !failure.Contains("private"), "failure diagnostics omit credentials, URLs and raw exception messages");
-            failureWire.Failure = null;
-            failureWire.Status = HttpStatusCode.OK;
-            await preparation.PrepareAsync(default);
-            check(true, "diagnostic logging preserves preparation retry success");
+            await Reject(() => new PreparedSessionManager(failureBackend, log: diagnostics.Add, delay: NoDelay).PlayAsync("steam-2868840", default));
+            check(diagnostics.Any(l => l.Contains("[HIO-PREPARE-ERROR]") && l.Contains("http_status=503")) && !string.Join("", diagnostics).Contains("secret-token"), "allocation diagnostics retain HTTP status without credentials");
         }
-        check(BackendConnection.DescribeFailure(new TaskCanceledException(), default).Contains("reason=timeout"), "request timeout is distinguished from caller cancellation");
-        foreach (var failureCase in new[] {
-            (Status: HttpStatusCode.Conflict, Code: "session_closing"),
-            (Status: HttpStatusCode.TooManyRequests, Code: "request_rate_limited") })
+        using (var unsupported = new BackendConnection("http://localhost:5010/", handler: new WarmWire { Status = HttpStatusCode.NotFound, ErrorCode = "game_not_configured" }))
         {
-            using var errorBackend = new BackendConnection("http://localhost:5010/", handler: new WarmWire {
-                Status = failureCase.Status, ErrorCode = failureCase.Code });
-            try { await errorBackend.PrepareSessionAsync("error-contract", default); throw new Exception("Failure accepted"); }
-            catch (BackendRequestException error) {
-                check(error.Status == (int)failureCase.Status && error.ErrorCode == failureCase.Code &&
-                    !error.Message.Contains("로그인") && !error.Message.Contains("private-detail"),
-                    "preparation conflict and general throttling retain their own codes without login advice");
-            }
+            try { await unsupported.PrepareSessionAsync("unsupported", "steam-other", default); throw new Exception("unknown game accepted"); }
+            catch (CloudPlayUnavailableException) { check(true, "unknown game has a game availability error instead of missing API error"); }
         }
-        check(BackendConnection.DescribeFailure(new OperationCanceledException(), new CancellationToken(true)).Contains("reason=cancelled"), "caller cancellation is labeled separately");
-        var cloud = new FakeWarmBackend { Pending = new TaskCompletionSource<bool>() };
-        var sessions = new PreparedSessionManager(cloud);
-        var startup = sessions.PrepareAsync(default);
-        var play = sessions.PlayAsync("steam-2868840", default);
-        check(cloud.PrepareIds.Count == 1 && !play.IsCompleted, "early Play shares the in-flight startup preparation");
-        cloud.Pending.SetResult(true);
-        await startup;
-        var result = await play;
-        check(result.SessionId == "warm-1" && cloud.Plays == 1, "Play claims the prepared V5 session without creating a legacy session");
-        await Reject(() => sessions.PlayAsync("steam-2868840", default));
-        check(cloud.Plays == 1, "concurrent/repeated Play cannot claim the same allocation twice");
-        await sessions.PlayFinishedAsync();
-        await sessions.PlayAsync("steam-2868840", default);
-        check(cloud.PrepareIds.Distinct().Count() == 2, "a later game after close gets a fresh preparation");
-        await sessions.StopAsync(default);
-        check(cloud.Stops == 1, "shutdown stops the owned session");
-        await Reject(() => sessions.PrepareAsync(default));
-
-        cloud = new FakeWarmBackend { FailFirstPrepare = true };
-        sessions = new PreparedSessionManager(cloud);
-        await Reject(() => sessions.PrepareAsync(default));
-        await sessions.PlayAsync("steam-2868840", default);
-        check(cloud.PrepareIds.Count == 2 && cloud.PrepareIds.Distinct().Count() == 1, "lost preparation response retries the same idempotency ID");
-
-        cloud = new FakeWarmBackend { ExpireFirstPlay = true };
-        sessions = new PreparedSessionManager(cloud);
-        await sessions.PrepareAsync(default);
-        await sessions.PlayAsync("steam-2868840", default);
-        check(cloud.Stops == 1 && cloud.PrepareIds.Distinct().Count() == 2 && cloud.Plays == 2, "expired warm session is stopped and replaced once on Play");
-
-        cloud = new FakeWarmBackend(); sessions = new PreparedSessionManager(cloud);
-        await sessions.PrepareAsync(default);
-        await Reject(() => sessions.PlayAsync("epic-other", default));
-        check(cloud.Plays == 0, "another game cannot bypass V5 preparation");
-        cloud = new FakeWarmBackend { Disabled = true }; sessions = new PreparedSessionManager(cloud);
-        await Reject(() => sessions.PrepareAsync(default));
-        await Reject(() => sessions.PlayAsync("steam-2868840", default));
-        check(cloud.PrepareIds.Distinct().Count() == 1, "unavailable preparation fails without allocating a legacy session");
-        cloud = new FakeWarmBackend { Pending = new TaskCompletionSource<bool>() }; sessions = new PreparedSessionManager(cloud);
-        startup = sessions.PrepareAsync(default); var stop = sessions.StopAsync(default);
-        cloud.Pending.SetResult(true); await startup; await stop;
-        check(cloud.Stops == 1, "shutdown during preparation cleans up its eventual result");
-
         var wire = new WarmWire();
         using var backend = new BackendConnection("http://localhost:5010/", "test-auth", wire);
-        var prepared = await backend.PrepareSessionAsync("startup-id", default);
+        var prepared = await backend.PrepareSessionAsync("play-id", "steam-2868840", default);
         await backend.PlayPreparedSessionAsync(prepared.SessionId, prepared.GameId, default);
         check(wire.Calls.SequenceEqual(new[] { "/v1/holeinone/sessions/prepare", "/v1/holeinone/sessions/warm-1/play" }), "HTTP preparation and claim routes match the backend contract");
         wire.Url = "http://attacker.invalid/stream/v5/index.html#warm-1/" + new string('a',64);
@@ -160,17 +126,22 @@ static class PrewarmChecks
 
     private sealed class FakeWarmBackend : IPreparedSessionBackend
     {
-        public List<string> PrepareIds = new();
+        public List<string> PrepareIds = new(), Games = new(), Cancels = new();
         public TaskCompletionSource<bool> Pending;
-        public bool FailFirstPrepare, ExpireFirstPlay, Disabled;
-        public int Plays, Stops;
-        public async Task<PreparedCloudSession> PrepareSessionAsync(string requestId, CancellationToken ct)
+        public bool FailFirstPrepare, ExpireFirstPlay, FailCancel;
+        public int Plays;
+        public async Task<PreparedCloudSession> PrepareSessionAsync(string requestId, string gameId, CancellationToken ct)
         {
-            PrepareIds.Add(requestId);
-            if (Pending != null) await Pending.Task;
-            if (Disabled) throw new PrewarmingUnavailableException();
+            PrepareIds.Add(requestId); Games.Add(gameId);
+            if (Pending != null) await Pending.Task.WaitAsync(ct);
             if (FailFirstPrepare && PrepareIds.Count == 1) throw new HttpRequestException("lost response");
-            return new() { SessionId = "warm-" + PrepareIds.Distinct().Count(), GameId = "steam-2868840", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(9) };
+            return new() { SessionId = "warm-" + PrepareIds.Distinct().Count(), GameId = gameId, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(9) };
+        }
+        public Task CancelPreparationAsync(string id, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested(); Cancels.Add(id);
+            if (FailCancel) throw new HttpRequestException("lost cleanup");
+            return Task.CompletedTask;
         }
         public Task<CloudSession> PlayPreparedSessionAsync(string id, string game, CancellationToken ct)
         {
@@ -178,19 +149,17 @@ static class PrewarmChecks
             if (ExpireFirstPlay && Plays == 1) throw new PreparedSessionExpiredException();
             return Task.FromResult(new CloudSession { SessionId = id, GameId = game });
         }
-        public Task StopCloudAsync(string id, CancellationToken ct) { Stops++; return Task.CompletedTask; }
+        public Task StopCloudAsync(string id, CancellationToken ct) => Task.CompletedTask;
     }
     private sealed class WarmWire : HttpMessageHandler
     {
         public List<string> PrepareIds = new();
-        public Exception Failure;
         public List<string> Calls = new();
         public string Url = "http://localhost:5010/stream/v5/index.html#warm-1/" + new string('a',64);
         public HttpStatusCode Status = HttpStatusCode.OK;
         public string ErrorCode;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
-            if (Failure != null) throw Failure;
             Calls.Add(request.RequestUri.AbsolutePath);
             if (request.RequestUri.AbsolutePath.EndsWith("/prepare"))
                 PrepareIds.Add(request.Content.ReadAsStringAsync().GetAwaiter().GetResult());

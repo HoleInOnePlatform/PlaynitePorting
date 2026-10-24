@@ -1,3 +1,19 @@
+# 게임 선택 후 세션 생성 · API 계약 3 (2026-10-24)
+
+앱 시작·회원 로그인·Steam 연결 완료 시 클라우드 세션을 만들지 않는다. 기존 세이브 receipt 복구만 수행한다. 미설치 게임의 Play를 누르면 gameId와 새 requestId로 prepare를 요청하고 Backend의 Streaming:Games 매핑에 해당하는 Application을 claim한다. 같은 묶음의 게임들은 같은 Application ID를 사용하면 된다.
+
+서버 요청 중에는 게임명과 취소 버튼이 있는 준비 창을 표시하고, 응답 후 기존 WebView와 로컬 설치·세이브 전환 흐름으로 이어진다. 여러 클라우드 게임을 동시에 시작하지 않으며 준비 중 같은 게임을 클릭하면 준비 창에 포커스를 준다. 취소·오류·종료 시 요청 ID로 서버 정리를 요청하므로 세션 ID를 받지 못한 경우도 처리한다. 실패한 정리를 확인하기 전에 다른 세션을 만들지 않는다.
+
+Backend와 앱은 health 계약 3으로 함께 배포한다. 서버 Prewarm 블록을 제거하고 수명 설정을 SessionPreparation으로 이전한다. 각 게임 이미지와 launcher.json, StreamGroup 연결 및 게임별 세이브 경로는 미리 준비해야 한다. 미등록 게임은 지원하지 않는다는 안내를 표시하고 기본 게임으로 우회하지 않는다. 새 게임을 런타임에 다운로드하는 코드는 추가하지 않았다.
+
+AWS AlwaysOnCapacity·TargetIdleCapacity는 앱 웜업과 별개의 설정이다. 대기 용량을 사용하지 않을 때는 두 값을 0으로 설정하고 MaximumCapacity를 운영 목표에 맞춘다. 실제 AWS 설정 변경·게임 이미지 생성·실게임 테스트는 이 코드 변경에 포함하지 않는다. 콜드 스타트와 Steam 로그인 시간은 남으며 초기 연결 화면에 진행 상태를 표시한다.
+
+검증: tests/HoleInOne.Checks는 명시적 Play, 두 게임 선택, 동일 ID 재시도, 취소, 종료, 만료 및 정리 실패를 검사한다. tests/SteamSetup.Compile은 새 준비 창과 설정 UI를 .NET Framework 4.6.2로 컴파일한다. 기존 SaveWorkflowChecks의 실패 응답 fixture는 실제 canRetry=false를 명시하도록 고쳤다(생산 세이브 동작은 변경하지 않음). 전체 앱은 Backend release-pair workflow의 Windows 빌드로 확인한다.
+
+---
+
+> 아래 내용은 과거 웜업 실험 기록이다. 구형 Prewarm 설정, 고정 Application ID, 다른 게임 fallback 설명은 현재 구현에 적용하지 않는다.
+
 # V5 시작 시 사전 준비
 
 `codex/v5-session-prewarm`은 `feature/user`의 기존 전체화면 게임 웹뷰·설치·세이브 전환 구현을 기반으로 합니다. 기본 브랜치는 변경하지 않습니다.

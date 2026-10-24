@@ -18,7 +18,7 @@ static class SteamLinkChecks
         await secure.GetSteamLinkAsync(default);
         check(wire.LastMethod==HttpMethod.Get && wire.Body==null,"link lookup sends no saved token");
         wire.Status=HttpStatusCode.Conflict;wire.BodyToSend="{\"errorCode\":\"steam_session_in_use\",\"error\":\"secret-never-show\"}";
-        try {await secure.PrepareSessionAsync("other-pc",default);throw new Exception("conflict ignored");}
+        try {await secure.PrepareSessionAsync("other-pc","steam-2868840",default);throw new Exception("conflict ignored");}
         catch(SteamLinkException e) {check(e.Code=="steam_session_in_use"&&!e.Message.Contains("secret-never-show"),"ownership conflict is surfaced without enabling legacy fallback or leaking backend body");}
         wire.Status=HttpStatusCode.Unauthorized;
         try {await secure.GetSteamLinkAsync(default);throw new Exception("expired account accepted");}
