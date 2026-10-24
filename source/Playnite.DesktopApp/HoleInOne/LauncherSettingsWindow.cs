@@ -36,7 +36,7 @@ namespace Playnite.DesktopApp.HoleInOne
                         var settings = LauncherSettings.Load();
                         await LauncherLogin.LogoutAsync(settings); Close();
                         if (!LauncherLogin.EnsureSignedIn(settings)) Application.Current.Shutdown();
-                        else { await SteamSetup.OnStartupAsync(); CloudPreparation.Begin(); }
+                        else { await SteamSetup.OnStartupAsync(); CloudPreparation.ResumeReceipts(); }
                     }
                     catch (Exception)
                     {
@@ -222,7 +222,7 @@ namespace Playnite.DesktopApp.HoleInOne
                     var current = await LauncherSettingsService.ChangeAddressAsync(url);
                     applied.Text = "서비스 주소: " + current.BackendUrl + "\n설정 출처: " + current.BackendAddressSource;
                     var signedIn = LauncherLogin.EnsureSignedIn(current);
-                    if (signedIn) { await SteamSetup.OnStartupAsync(); CloudPreparation.Begin(); }
+                    if (signedIn) { await SteamSetup.OnStartupAsync(); CloudPreparation.ResumeReceipts(); }
                     address.Text = url;
                     status.Text = signedIn ? "주소 저장 완료. 새 서버에서 게임을 준비합니다." : "주소 저장 완료. 클라우드 플레이 전에 새 서버에 로그인해 주세요.";
                 }

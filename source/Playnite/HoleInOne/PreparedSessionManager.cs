@@ -10,138 +10,160 @@ namespace Playnite.HoleInOne
         public string GameId { get; set; }
         public DateTimeOffset ExpiresAt { get; set; }
     }
-    public sealed class PrewarmingUnavailableException : Exception { public PrewarmingUnavailableException() : base("서버의 V5 준비 계약을 확인할 수 없습니다. 앱과 Backend 버전을 확인해 주세요.") { } }
+    public sealed class SessionPreparationUnavailableException : Exception
+    { public SessionPreparationUnavailableException() : base("게임 준비 API를 확인할 수 없습니다. 앱과 Backend 버전을 확인해 주세요.") { } }
     public sealed class PreparedSessionExpiredException : Exception { }
+    public sealed class CloudSessionCleanupPendingException : InvalidOperationException
+    {
+        public CloudSessionCleanupPendingException(Exception cause)
+            : base("이전 게임 정리 중입니다. 잠시 후 다시 시도해 주세요.", cause) { }
+    }
     public interface IPreparedSessionBackend
     {
-        Task<PreparedCloudSession> PrepareSessionAsync(string requestId, CancellationToken ct);
+        Task<PreparedCloudSession> PrepareSessionAsync(string requestId, string gameId, CancellationToken ct);
+        Task CancelPreparationAsync(string requestId, CancellationToken ct);
         Task<CloudSession> PlayPreparedSessionAsync(string sessionId, string gameId, CancellationToken ct);
         Task StopCloudAsync(string sessionId, CancellationToken ct);
     }
 
-    // Shared by startup and Play. Never create a second allocation just because preparation
-    // is still running or its HTTP response was lost. Backend deduplicates requestId too.
+    // Only explicit Play allocates capacity. Retries retain both the game and idempotency key.
     public sealed class PreparedSessionManager
     {
+        public static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(10);
+        // A cancelled Play can spend CleanupTimeout cleaning up before Stop acquires the gate,
+        // then Stop may retry that cleanup once. Leave margin for both operations.
+        public static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(25);
+        public static readonly TimeSpan ShutdownWaitTimeout = TimeSpan.FromSeconds(30);
         private readonly IPreparedSessionBackend backend;
         private readonly SemaphoreSlim gate = new SemaphoreSlim(1);
         private readonly Func<DateTimeOffset> now;
+        private readonly Func<TimeSpan, CancellationToken, Task> delay;
         private readonly PerformanceTrace timing;
         private readonly Action<string> log;
         private readonly CancellationTokenSource shutdown = new CancellationTokenSource();
         public string TimingId => timing.Id;
-        private string requestId = Guid.NewGuid().ToString("N");
+        private string requestId;
         private PreparedCloudSession prepared;
         private bool closed;
         private bool claimed;
-        public PreparedSessionManager(IPreparedSessionBackend backend, Func<DateTimeOffset> now = null, Action<string> log = null)
-        { timing = new PerformanceTrace("session_preparation", log); this.log = log; this.backend = backend; this.now = now ?? (() => DateTimeOffset.UtcNow); }
-
-        private async Task PrepareCoreAsync(CancellationToken ct)
+        private bool allocationPossible;
+        public PreparedSessionManager(IPreparedSessionBackend backend, Func<DateTimeOffset> now = null, Action<string> log = null,
+            Func<TimeSpan, CancellationToken, Task> delay = null)
         {
-            if (closed) throw new OperationCanceledException();
-            if (prepared != null) return;
-            try { prepared = await timing.RunAsync("prepare_api", () => backend.PrepareSessionAsync(requestId, ct)).ConfigureAwait(false); }
-            catch (Exception error)
+            timing = new PerformanceTrace("session_preparation", log);
+            this.log = log; this.backend = backend; this.now = now ?? (() => DateTimeOffset.UtcNow);
+            this.delay = delay ?? Task.Delay;
+        }
+        private void Log(string message) { try { log?.Invoke(message); } catch { } }
+        private async Task PrepareCoreAsync(string gameId, CancellationToken ct)
+        {
+            for (var attempt = 0; ; attempt++)
             {
-                try { log?.Invoke("[HIO-PREPARE-ERROR] trace=" + timing.Id + " stage=prepare_api " + BackendConnection.DescribeFailure(error, ct)); }
-                catch { } // Logging must not change preparation or retry behavior.
-                throw;
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    prepared = await timing.RunAsync("prepare_api", () => backend.PrepareSessionAsync(requestId, gameId, ct)).ConfigureAwait(false);
+                    allocationPossible = true;
+                    return;
+                }
+                catch (Exception error)
+                {
+                    // A later rejection cannot undo an earlier unknown allocation outcome.
+                    if (!RejectedBeforeAllocation(error)) allocationPossible = true;
+                    Log("[HIO-PREPARE-ERROR] trace=" + timing.Id + " stage=prepare_api " + BackendConnection.DescribeFailure(error, ct));
+                    if (attempt >= 5 || ct.IsCancellationRequested || !IsRetryable(error)) throw;
+                    Log("[HIO-PREPARE-RETRY] trace=" + timing.Id + " retry=" + (attempt + 1) + " max_retries=5 delay_ms=2000");
+                    await delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
+                }
             }
         }
-        public async Task PrepareAsync(CancellationToken ct)
+        private static bool RejectedBeforeAllocation(Exception error)
         {
-            await timing.RunAsync("preparation_lock_wait", () => gate.WaitAsync(ct)).ConfigureAwait(false);
-            try { await PrepareCoreAsync(ct).ConfigureAwait(false); }
-            finally { gate.Release(); }
+            // Only classify prepare responses. A claim failure can follow a successful allocation.
+            // Other errors (including malformed success bodies and Steam lease conflicts) remain ambiguous.
+            return error.Data["HioHttpStatus"] is int status &&
+                (status == 400 || status == 401 || status == 403 || status == 404);
         }
-        public async Task PrepareWithRetriesAsync(CancellationToken ct, Func<TimeSpan, CancellationToken, Task> delay = null)
+        private static bool IsRetryable(Exception error)
+        {
+            if (error is LoginRequiredException) return false;
+            if (error is OperationCanceledException) return true;
+            if (!(error is System.Net.Http.HttpRequestException)) return false;
+            if (error.Data["HioHttpStatus"] is int status) return status == 408 || status == 429 || status >= 500;
+            return true;
+        }
+        public async Task<CloudSession> PlayAsync(string gameId, CancellationToken ct)
         {
             using (var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, shutdown.Token))
             {
                 var token = linked.Token;
-                // Share the entire startup operation with Play, including the retry delay.
-                await gate.WaitAsync(token).ConfigureAwait(false);
+                await timing.RunAsync("preparation_lock_wait", () => gate.WaitAsync(token)).ConfigureAwait(false);
                 try
                 {
-                    if (claimed) return;
-                    for (var attempt = 1; ; attempt++)
+                    if (closed) throw new OperationCanceledException();
+                    // A rejected concurrent Play must never cancel the already claimed game.
+                    if (claimed) throw new InvalidOperationException("이미 클라우드 게임을 실행하고 있습니다. 현재 게임 창을 닫아 주세요.");
+                    // A previous failed cleanup must be acknowledged before allocating another game.
+                    if (requestId != null)
                     {
-                        token.ThrowIfCancellationRequested();
-                        try { await PrepareCoreAsync(token).ConfigureAwait(false); return; }
-                        catch (Exception error) when (attempt <= 5 && !token.IsCancellationRequested && IsRetryable(error))
+                        try { await ReleaseCoreAsync(token).ConfigureAwait(false); }
+                        catch (Exception error) when (!(error is LoginRequiredException) && !token.IsCancellationRequested)
+                        { throw new CloudSessionCleanupPendingException(error); }
+                    }
+                    try
+                    {
+                        for (var attempt = 0; attempt < 2; attempt++)
                         {
-                            try { log?.Invoke("[HIO-PREPARE-RETRY] trace=" + timing.Id + " retry=" + attempt + " max_retries=5 delay_ms=2000"); }
-                            catch { }
-                            await (delay != null ? delay(TimeSpan.FromSeconds(2), token) : Task.Delay(TimeSpan.FromSeconds(2), token)).ConfigureAwait(false);
+                            requestId = Guid.NewGuid().ToString("N");
+                            try
+                            {
+                                await PrepareCoreAsync(gameId, token).ConfigureAwait(false);
+                                if (prepared.GameId != gameId) throw new CloudPlayUnavailableException("요청한 게임과 준비된 게임이 다릅니다.");
+                                if (prepared.ExpiresAt <= now()) throw new PreparedSessionExpiredException();
+                                token.ThrowIfCancellationRequested();
+                                var session = await timing.RunAsync("play_api", () => backend.PlayPreparedSessionAsync(prepared.SessionId, gameId, token)).ConfigureAwait(false);
+                                token.ThrowIfCancellationRequested();
+                                claimed = true;
+                                return session;
+                            }
+                            catch (PreparedSessionExpiredException) when (attempt == 0)
+                            { await ReleaseCoreAsync(token).ConfigureAwait(false); }
                         }
+                        throw new PreparedSessionExpiredException();
+                    }
+                    catch
+                    {
+                        // The HTTP response may be lost: cancel by owner-scoped request ID even
+                        // when we never learned the allocated session ID. Do not reuse caller cancellation.
+                        using (var cleanup = new CancellationTokenSource(CleanupTimeout))
+                        {
+                            try { await ReleaseCoreAsync(cleanup.Token).ConfigureAwait(false); }
+                            catch (Exception error) { Log("Play cancellation cleanup deferred (" + BackendConnection.DescribeFailure(error, cleanup.Token) + ")."); }
+                        }
+                        throw;
                     }
                 }
                 finally { gate.Release(); }
             }
         }
-        private static bool IsRetryable(Exception error)
-        {
-            if (error is LoginRequiredException) return false;
-            if (error is OperationCanceledException) return true; // Caller cancellation is checked separately.
-            if (!(error is System.Net.Http.HttpRequestException)) return false;
-            if (error.Data["HioHttpStatus"] is int status)
-                return status == 408 || status == 429 || status >= 500;
-            return true;
-        }
-        public async Task<CloudSession> PlayAsync(string gameId, CancellationToken ct)
-        {
-            await timing.RunAsync("preparation_lock_wait", () => gate.WaitAsync(ct)).ConfigureAwait(false);
-            try
-            {
-                if (closed) throw new OperationCanceledException();
-                // The currently claimed cloud game remains owned by InstantPlayCoordinator.
-                if (claimed) throw new InvalidOperationException("이미 클라우드 게임을 실행하고 있습니다. 현재 게임 창을 닫아 주세요.");
-                for (var attempt = 0; attempt < 2; attempt++)
-                {
-                    try
-                    {
-                        await PrepareCoreAsync(ct).ConfigureAwait(false);
-                        if (prepared.GameId != gameId)
-                            throw new CloudPlayUnavailableException("이 게임은 사용자별 클라우드 준비를 아직 지원하지 않습니다.");
-                        if (prepared.ExpiresAt <= now()) throw new PreparedSessionExpiredException();
-                        ct.ThrowIfCancellationRequested();
-                        var session = await timing.RunAsync("play_api", () => backend.PlayPreparedSessionAsync(prepared.SessionId, gameId, ct)).ConfigureAwait(false);
-                        claimed = true;
-                        return session;
-                    }
-                    catch (PreparedSessionExpiredException) when (attempt == 0)
-                    {
-                        await ReleaseCoreAsync(ct).ConfigureAwait(false);
-                    }
-                }
-                throw new PreparedSessionExpiredException();
-            }
-            finally { gate.Release(); }
-        }
         private async Task ReleaseCoreAsync(CancellationToken ct)
         {
-            if (prepared != null) await backend.StopCloudAsync(prepared.SessionId, ct).ConfigureAwait(false);
-            prepared = null;
-            requestId = Guid.NewGuid().ToString("N");
-            claimed = false;
+            if (requestId != null && allocationPossible) await backend.CancelPreparationAsync(requestId, ct).ConfigureAwait(false);
+            Clear();
         }
-        // Called only after the coordinator has finished the old play/stop or local handoff.
+        private void Clear() { prepared = null; requestId = null; claimed = false; allocationPossible = false; }
+        // The coordinator owns stop/export ordering after a successful Play.
         public async Task PlayFinishedAsync()
         {
             await gate.WaitAsync().ConfigureAwait(false);
-            try { prepared = null; claimed = false; requestId = Guid.NewGuid().ToString("N"); }
+            try { Clear(); }
             finally { gate.Release(); }
         }
         public async Task StopAsync(CancellationToken ct)
         {
             shutdown.Cancel();
-            await timing.RunAsync("preparation_lock_wait", () => gate.WaitAsync(ct)).ConfigureAwait(false);
-            try
-            {
-                closed = true;
-                await ReleaseCoreAsync(ct).ConfigureAwait(false);
-            }
+            await gate.WaitAsync(ct).ConfigureAwait(false);
+            try { closed = true; await ReleaseCoreAsync(ct).ConfigureAwait(false); }
             finally { gate.Release(); }
         }
     }

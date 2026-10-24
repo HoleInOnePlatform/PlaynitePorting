@@ -53,7 +53,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 if(!SteamLinkContext.IsConfigured) { status.Text="HoleInOne 로그인과 HTTPS 연결을 지원하는 서버가 필요합니다."; Controls(false); return; }
                 var link=await SteamLinkContext.RefreshAsync(closed.Token);
                 status.Text=link.State=="unlinked" ? "미연결 · 연결을 취소해도 로컬 라이브러리는 사용할 수 있습니다." : link.State=="reauth_required" ? "재인증 필요 · 아래에서 다시 연결해 주세요." :
-                    "연결됨 · Steam " + link.SteamId + (SteamLinkContext.HasLocalLogin ? "" : "\n클라우드 로그인은 유지됩니다. 이 PC의 라이브러리·세이브 연동에는 다시 연결이 필요합니다.");
+                    "연결됨 · Steam " + link.SteamId + (SteamLinkContext.HasLocalLogin ? "" : "\n클라우드 연결은 유지됩니다. 이 PC에서 보유 게임 목록을 새로 불러오려면 다시 연결해 주세요. 로컬 다운로드·실행에는 PC Steam에서 같은 계정으로 로그인해야 합니다.");
                 preparation.Text=link.SessionState==null ? "클라우드 준비 세션 없음" : "클라우드 상태: " + SessionText(link.SessionState);
                 if(link.DeletionPending)status.Text+="\n서버에서 이전 인증 자료 삭제를 재시도하고 있습니다.";
             }
@@ -80,7 +80,7 @@ namespace Playnite.DesktopApp.HoleInOne
                 }
                 await RefreshAsync();
                 status.Text+="\n연결 정보를 저장했습니다. 다음 실행부터 클라우드 로그인에 재사용합니다.";
-                CloudPreparation.Begin();
+                CloudPreparation.ResumeReceipts();
             }
             catch(OperationCanceledException) { if(!closed.IsCancellationRequested)status.Text="인증이 취소되었거나 시간이 만료되었습니다. 서버 저장 요청 이후 취소했다면 다시 열어 연결 상태를 확인해 주세요."; }
             catch(Exception error) { if(!closed.IsCancellationRequested)status.Text=Friendly(error); }

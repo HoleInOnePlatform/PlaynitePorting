@@ -16,6 +16,16 @@ namespace Playnite.HoleInOne
         public string SessionState { get; set; }
         public bool DeletionPending { get; set; }
         [JsonIgnore] public bool IsLinked => State == "linked";
+        public void RequireCloudConnection()
+        {
+            if (State == "reauth_required") throw new SteamLinkException("steam_reauthentication_required");
+            if (!IsLinked) throw new SteamLinkException("steam_link_required");
+        }
+        public void RequireLibraryConnection(bool hasLocalLogin)
+        {
+            RequireCloudConnection();
+            if (!hasLocalLogin) throw new SteamLinkException("steam_local_library_link_required");
+        }
     }
     public sealed class SteamLinkException : Exception
     {
@@ -27,7 +37,9 @@ namespace Playnite.HoleInOne
             {
                 case "steam_session_in_use": return "이 계정은 다른 PC 또는 현재 클라우드에서 사용 중입니다. 이용을 정상 종료한 후 다시 시도해 주세요.";
                 case "steam_session_closing": return "준비 세션을 종료하고 있습니다. 잠시 후 다시 시도해 주세요.";
-                case "steam_link_required": case "steam_reauthentication_required": return "Steam 연결 또는 재인증이 필요합니다. HoleInOne 설정에서 연결해 주세요.";
+                case "steam_link_required": return "HoleInOne 계정에 Steam을 연결해 주세요.";
+                case "steam_reauthentication_required": return "Steam 인증이 만료되었거나 계정을 다시 확인해야 합니다. HoleInOne 설정에서 Steam을 다시 연결해 주세요.";
+                case "steam_local_library_link_required": return "클라우드 Steam 연결은 유지됩니다. 이 PC에서 보유 게임 목록을 새로 불러오려면 HoleInOne 설정에서 Steam을 다시 연결해 주세요.";
                 case "steam_link_disabled": case "https_required": return "서버의 안전한 Steam 연결 기능이 아직 준비되지 않았습니다. 로컬 라이브러리는 계속 사용할 수 있습니다.";
                 case "steam_validation_unavailable": return "Steam 인증 확인이 지연되고 있습니다. 기존 연결은 유지되며 잠시 후 다시 시도할 수 있습니다.";
                 default: return "Steam 연결 요청을 완료하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.";

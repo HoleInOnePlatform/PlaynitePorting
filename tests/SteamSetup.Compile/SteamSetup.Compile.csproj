@@ -5,6 +5,7 @@
 <PackageReference Include="System.IO.Compression" Version="4.3.0"/>
 <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
 <Compile Include="HostContracts.cs"/>
+<Compile Include="../../source/Playnite.DesktopApp/HoleInOne/GamePreparationWindow.cs"/>
 <Compile Include="../../source/Playnite/HoleInOne/BackendConnection.cs"/>
 <Compile Include="../../source/Playnite/HoleInOne/SteamLinkConnection.cs"/>
 <Compile Include="../../source/Playnite/HoleInOne/SteamLinkContext.cs"/>

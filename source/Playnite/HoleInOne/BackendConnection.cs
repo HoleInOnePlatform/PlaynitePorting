@@ -19,7 +19,7 @@ namespace Playnite.HoleInOne
         public async Task CheckDevelopmentHealthAsync(CancellationToken cancellationToken)
         {
             var health = await SendAsync<BackendHealth>(HttpMethod.Get, "health", null, cancellationToken, 12);
-            if (health.Status != "ok" || health.Service != "holeinone" || health.ContractVersion != 2
+            if (health.Status != "ok" || health.Service != "holeinone" || health.ContractVersion != 3
                 || health.Authentication != "accounts")
                 throw new InvalidDataException("서버와 앱의 계약 버전이 일치하지 않습니다. 서비스 주소와 앱 업데이트를 확인해 주세요.");
         }
@@ -65,14 +65,21 @@ namespace Playnite.HoleInOne
             }
         }
 
-        public async Task<PreparedCloudSession> PrepareSessionAsync(string requestId, CancellationToken ct)
+        public async Task<PreparedCloudSession> PrepareSessionAsync(string requestId, string gameId, CancellationToken ct)
         {
             ValidateId(requestId);
-            var prepared = await SendAsync<PreparedCloudSession>(HttpMethod.Post, "v1/holeinone/sessions/prepare", new { requestId }, ct, 40).ConfigureAwait(false);
+            ValidateId(gameId);
+            var prepared = await SendAsync<PreparedCloudSession>(HttpMethod.Post, "v1/holeinone/sessions/prepare", new { requestId, gameId }, ct, 40).ConfigureAwait(false);
             ValidateId(prepared.SessionId);
             ValidateId(prepared.GameId);
             if (prepared.ExpiresAt <= DateTimeOffset.UtcNow) throw new PreparedSessionExpiredException();
             return prepared;
+        }
+
+        public Task CancelPreparationAsync(string requestId, CancellationToken ct)
+        {
+            ValidateId(requestId);
+            return PostEmptyAsync("v1/holeinone/session-requests/" + requestId + "/cancel", null, ct);
         }
 
         public async Task<CloudSession> PlayPreparedSessionAsync(string sessionId, string gameId, CancellationToken ct)
@@ -315,9 +322,9 @@ namespace Playnite.HoleInOne
             var play = path.EndsWith("/play", StringComparison.Ordinal);
             if ((preparation || play) && (status == 410 || (play && status == 404)))
                 throw new PreparedSessionExpiredException();
-            if (preparation && status == 404) throw new PrewarmingUnavailableException();
             if ((preparation || play) && (code == "prepared_game_mismatch" || code == "game_not_supported" || code == "game_not_configured"))
                 throw new CloudPlayUnavailableException("이 게임은 현재 클라우드 플레이를 지원하지 않습니다. PC에 설치한 뒤 플레이해 주세요.");
+            if (preparation && status == 404) throw new SessionPreparationUnavailableException();
             if (path.EndsWith("/export-handoff", StringComparison.Ordinal) && status == 409)
                 throw new BackendRequestException(status, method, path, code, code == "baseline_unverified"
                     ? "클라우드의 기존 세이브 구성을 먼저 확인해야 합니다."

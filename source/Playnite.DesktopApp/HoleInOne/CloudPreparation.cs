@@ -16,9 +16,7 @@ namespace Playnite.DesktopApp.HoleInOne
             public PreparedSessionManager Sessions;
         }
         private static Context current;
-        private static Task pendingPreparation = Task.CompletedTask;
         private static Task pendingCleanup = Task.CompletedTask;
-        private static CancellationTokenSource preparationCancellation = new CancellationTokenSource();
 
         // Accessed on the WPF dispatcher. Each context owns its credentials and cleanup connection.
         public static PreparedSessionManager Get(LauncherSettings settings)
@@ -38,49 +36,28 @@ namespace Playnite.DesktopApp.HoleInOne
             }
             return current.Sessions;
         }
-        public static void Begin() { pendingPreparation = Task.WhenAll(pendingPreparation, BeginAsync()); }
-        private static async Task BeginAsync()
+        // Receipts recover completed save handoffs without allocating cloud capacity.
+        public static void ResumeReceipts()
         {
             try
             {
                 var settings = LauncherSettings.Load();
-                var generation = LauncherLogin.Generation;
-                var cancellation = preparationCancellation.Token;
-                // Startup already completed the login dialog. Do not show another dialog here.
-                if (string.IsNullOrEmpty(LauncherLogin.TokenFor(settings))) return;
-                if (!SteamLinkContext.IsConfigured || !(await SteamLinkContext.RefreshAsync(cancellation)).IsLinked) return;
-                cancellation.ThrowIfCancellationRequested();
-                if (generation != LauncherLogin.Generation) return;
-                new ExportReceipts(settings).Start();
-                await Get(settings).PrepareWithRetriesAsync(cancellation);
+                if (!string.IsNullOrEmpty(LauncherLogin.TokenFor(settings))) new ExportReceipts(settings).Start();
             }
-            catch (Exception error)
-            {
-                // Preparation must not block library use. Play retries the same preparation ID.
-                LogManager.GetLogger().Warn("Cloud preparation deferred (" + BackendConnection.DescribeFailure(error, CancellationToken.None) + ").");
-            }
+            catch (Exception error) { LogManager.GetLogger().Warn("Receipt recovery deferred (" + error.GetType().Name + ")."); }
         }
         public static Task ResetAsync()
         {
-            var previousCancellation = preparationCancellation;
-            previousCancellation.Cancel();
-            preparationCancellation = new CancellationTokenSource();
             var previous = current;
             current = null;
-            pendingCleanup = Task.WhenAll(pendingCleanup, previous == null ? Task.CompletedTask : StopAsync(previous),
-                DisposeAfterPreparationAsync(previousCancellation, pendingPreparation));
+            pendingCleanup = Task.WhenAll(pendingCleanup, previous == null ? Task.CompletedTask : StopAsync(previous));
             return pendingCleanup;
-        }
-        private static async Task DisposeAfterPreparationAsync(CancellationTokenSource cancellation, Task preparation)
-        {
-            try { await preparation.ConfigureAwait(false); }
-            finally { cancellation.Dispose(); }
         }
         private static async Task StopAsync(Context context)
         {
             try
             {
-                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+                using (var timeout = new CancellationTokenSource(PreparedSessionManager.StopTimeout))
                     await context.Sessions.StopAsync(timeout.Token).ConfigureAwait(false);
             }
             catch (Exception error)
@@ -89,8 +66,9 @@ namespace Playnite.DesktopApp.HoleInOne
         }
         public static void Shutdown()
         {
-            // WPF Exit cannot await. All network waits below avoid its synchronization context.
-            try { Task.WhenAll(ResetAsync(), pendingPreparation).Wait(TimeSpan.FromSeconds(5)); }
+            // WPF Exit cannot await. The wait covers in-flight Play cleanup plus a Stop retry.
+            // All network waits below avoid its synchronization context.
+            try { ResetAsync().Wait(PreparedSessionManager.ShutdownWaitTimeout); }
             catch (Exception) { }
         }
     }
