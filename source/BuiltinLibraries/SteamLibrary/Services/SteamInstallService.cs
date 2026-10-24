@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 
@@ -8,13 +7,6 @@ namespace SteamLibrary.Services
 {
     internal static class SteamInstallService
     {
-        internal static string BuildArguments(uint appId)
-        {
-            if (appId == 0) throw new ArgumentOutOfRangeException(nameof(appId));
-            // Leave destination selection to Steam. Never supply a library/volume override.
-            return string.Format(CultureInfo.InvariantCulture, "-silent +app_install {0}", appId);
-        }
-
         // Read-only discovery for progress tracking; these folders never select the install destination.
         internal static Dictionary<string, DateTime> CaptureManifests(uint appId, IEnumerable<string> folders)
         {

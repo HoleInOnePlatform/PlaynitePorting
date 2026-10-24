@@ -29,7 +29,7 @@ try
     else
     {
         var command=await commands.Reader.ReadAsync(lifetime.Token);
-        if(command.Operation == "library")
+        if(command.Operation is "library" or "install" or "uninstall")
         {
             if(command.TokenPath == null || !Path.IsPathFullyQualified(command.TokenPath)) throw new InvalidDataException();
             var libraryPlain = ProtectedData.Unprotect(File.ReadAllBytes(command.TokenPath), null, DataProtectionScope.CurrentUser);
@@ -37,6 +37,12 @@ try
             try { saved = JsonSerializer.Deserialize<Credential>(libraryPlain) ?? throw new InvalidDataException(); }
             finally { CryptographicOperations.ZeroMemory(libraryPlain); }
             if(saved.SteamId.ToString() != command.SteamId) throw new ProbeFailure("STEAM_ACCOUNT_MISMATCH");
+            if(command.Operation is "install" or "uninstall")
+            {
+                await RemoteDownloads.RunAsync(saved, command.AppId, command.Operation == "uninstall", lifetime.Token);
+                Emit(new { type = "accepted", steamId = saved.SteamId.ToString(), appId = command.AppId, operation = command.Operation });
+                return;
+            }
             await using var session = new SteamAuthentication();
             await session.ValidateAsync(saved, lifetime.Token);
             Emit(new { type = "library", steamId = saved.SteamId.ToString(), games = await session.OwnedGamesAsync(lifetime.Token) });
@@ -133,4 +139,4 @@ async Task CloudAsync()
         throw;
     }
 }
-record Command(string Operation,string? Method=null,string? Username=null,string? Password=null,string? Code=null,string? TokenPath=null,string? SteamId=null,string? SteamPath=null);
+record Command(string Operation,string? Method=null,string? Username=null,string? Password=null,string? Code=null,string? TokenPath=null,string? SteamId=null,string? SteamPath=null,uint AppId=0);

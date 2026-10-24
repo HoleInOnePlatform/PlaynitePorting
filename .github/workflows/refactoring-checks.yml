@@ -27,6 +27,12 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Steam remote download contract tests
+        shell: pwsh
+        working-directory: PlaynitePorting
+        run: |
+          dotnet run --project tests/SteamRemote.Checks
+          if ($LASTEXITCODE -ne 0) { throw 'Steam remote checks failed' }
       - name: App contract and settings tests
         shell: pwsh
         working-directory: PlaynitePorting

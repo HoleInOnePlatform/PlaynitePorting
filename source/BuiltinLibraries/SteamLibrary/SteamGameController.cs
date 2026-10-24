@@ -18,6 +18,7 @@ namespace SteamLibrary
         private CancellationTokenSource watcherToken;
         private readonly IPlayniteAPI playniteApi;
         private Dictionary<string, DateTime> initialManifests;
+        private readonly CancellationTokenSource requestLifetime = new CancellationTokenSource();
 
         public SteamInstallController(Game game, IPlayniteAPI playniteApi) : base(game)
         {
@@ -28,6 +29,7 @@ namespace SteamLibrary
         public override void Dispose()
         {
             watcherToken?.Cancel();
+            requestLifetime.Cancel();
         }
 
         public override async void Install(InstallActionArgs args)
@@ -50,8 +52,10 @@ namespace SteamLibrary
                     await Task.Run(() =>
                     {
                         initialManifests = SteamInstallService.CaptureManifests(gameId.AppID, SteamLocalService.GetLibraryFolders());
-                        using (ProcessStarter.StartProcess(Steam.ClientExecPath, SteamInstallService.BuildArguments(gameId.AppID))) { }
                     });
+                    using (var bridge = new Playnite.HoleInOne.SteamLinkBridge())
+                        await bridge.RequestDownloadAsync(gameId.AppID, false, requestLifetime.Token);
+                    requestLifetime.Token.ThrowIfCancellationRequested();
                     StartInstallWatcher();
                 }
             }
@@ -126,12 +130,12 @@ namespace SteamLibrary
 
     public class SteamUninstallController : UninstallController
     {
-        private CancellationTokenSource watcherToken;
+        private readonly CancellationTokenSource watcherToken = new CancellationTokenSource();
 
         public override Task UninstallAsync(UninstallActionArgs args)
         {
-            // Steam can block while forwarding the command to its running client.
-            // Keep process startup off the UI thread; the caller handles launch errors.
+            // The synchronous SDK entry point waits for a server acknowledgement.
+            // Keep it off the UI thread; the caller handles request errors.
             return Task.Run(() => Uninstall(args));
         }
 
@@ -160,36 +164,30 @@ namespace SteamLibrary
             else
             {
                 var requestTimer = Stopwatch.StartNew();
-                using (ProcessStarter.StartProcess(Steam.ClientExecPath, $"-silent +app_uninstall {gameId.AppID}")) { }
+                using (var bridge = new Playnite.HoleInOne.SteamLinkBridge())
+                    bridge.RequestDownloadAsync(gameId.AppID, true, watcherToken.Token).GetAwaiter().GetResult();
                 LogManager.GetLogger().Info($"Steam uninstall request dispatched in {requestTimer.ElapsedMilliseconds} ms.");
-                StartUninstallWatcher();
+                WaitForUninstallAsync(gameId).GetAwaiter().GetResult();
             }
         }
 
-        public async void StartUninstallWatcher()
+        private async Task WaitForUninstallAsync(GameID id)
         {
-            watcherToken = new CancellationTokenSource();
-            var id = Game.ToSteamGameID();
-
-            await Task.Run(async () =>
+            var token = watcherToken.Token;
+            var deadline = DateTime.UtcNow.AddMinutes(5);
+            while (DateTime.UtcNow < deadline)
             {
-                while (true)
+                token.ThrowIfCancellationRequested();
+                // Presence in any registered library prevents a false completion.
+                var present = SteamInstallService.CaptureManifests(id.AppID, SteamLocalService.GetLibraryFolders()).Count != 0;
+                if (!present)
                 {
-                    if (watcherToken.IsCancellationRequested)
-                    {
-                        return;
-                    }
-
-                    var installed = SteamLocalService.GetInstalledGames(false);
-                    if (!installed.ContainsKey(id))
-                    {
-                        InvokeOnUninstalled(new GameUninstalledEventArgs());
-                        return;
-                    }
-
-                    await Task.Delay(5_000);
+                    InvokeOnUninstalled(new GameUninstalledEventArgs());
+                    return;
                 }
-            });
+                await Task.Delay(1000, token).ConfigureAwait(false);
+            }
+            throw new TimeoutException("Steam 제거 완료를 확인하지 못했습니다. Steam 다운로드 상태를 확인해 주세요.");
         }
     }
 

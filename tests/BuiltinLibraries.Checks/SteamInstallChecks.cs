@@ -9,8 +9,6 @@ internal static class SteamInstallChecks
 {
     internal static void Run()
     {
-        Check(SteamInstallService.BuildArguments(1086940) == "-silent +app_install 1086940", "installation never overrides Steam destination");
-        Expect<ArgumentOutOfRangeException>(() => SteamInstallService.BuildArguments(0), "invalid app ID rejected");
         var root = Path.Combine(Path.GetTempPath(), "HoleInOne-SteamInstallChecks-" + Guid.NewGuid());
         try
         {
@@ -42,7 +40,7 @@ internal static class SteamInstallChecks
             Check(StorageManagement.Used(settings, games) == 100, "Epic capacity excludes Steam and games outside configured folder");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
-        Console.WriteLine("9 Steam installation and storage checks passed.");
+        Console.WriteLine("7 Steam installation and storage checks passed.");
     }
 
     private static void Check(bool condition, string name)
