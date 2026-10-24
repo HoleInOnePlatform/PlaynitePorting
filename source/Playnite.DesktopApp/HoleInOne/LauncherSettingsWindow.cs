@@ -69,14 +69,12 @@ namespace Playnite.DesktopApp.HoleInOne
         private void AddStorageSettings(Panel panel)
         {
             var settings = LauncherSettings.Load();
-            panel.Children.Add(new TextBlock { Text = "저장공간 관리", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 12, 0, 8) });
-            panel.Children.Add(new TextBlock { Text = "Steam 설치 폴더 (등록된 라이브러리의 steamapps\\common)" });
-            var steam = new TextBox { Text = settings.SteamInstallDirectory, Margin = new Thickness(0, 4, 0, 8) };
-            panel.Children.Add(steam);
+            panel.Children.Add(new TextBlock { Text = "Epic 저장공간 관리", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 12, 0, 8) });
+            panel.Children.Add(new TextBlock { Text = "Steam 설치 위치는 Steam에서 결정하며, 아래 공간 관리 설정은 Epic에만 적용됩니다.", TextWrapping = TextWrapping.Wrap });
             panel.Children.Add(new TextBlock { Text = "Epic 설치 폴더" });
             var epic = new TextBox { Text = settings.DownloadDirectory, Margin = new Thickness(0, 4, 0, 8) };
             panel.Children.Add(epic);
-            panel.Children.Add(new TextBlock { Text = "최대 저장공간 (두 폴더 합계, GiB / 1 GiB = 1,024³ 바이트)" });
+            panel.Children.Add(new TextBlock { Text = "최대 저장공간 (Epic 설치 폴더, GiB / 1 GiB = 1,024³ 바이트)" });
             var maximum = new TextBox { Text = settings.MaximumStorageGiB.ToString(), Margin = new Thickness(0, 4, 0, 8) };
             panel.Children.Add(maximum);
             var automatic = new CheckBox { Content = "드라이브 용량으로 자동 계산", IsChecked = settings.AutomaticStorageLimit };
@@ -84,7 +82,7 @@ namespace Playnite.DesktopApp.HoleInOne
             automatic.Checked += (sender, args) => maximum.IsEnabled = false;
             automatic.Unchecked += (sender, args) => maximum.IsEnabled = true;
             panel.Children.Add(automatic);
-            panel.Children.Add(new TextBlock { Text = "설치 시 용량 한도를 넘으면 가장 오래 플레이하지 않은 게임부터 정리 대상을 계산하고, 추가 확인 없이 해당 게임을 자동 제거합니다. 플레이 기록이 없는 게임을 먼저 정리하며 실행 중인 게임은 제외합니다. 폴더 변경은 다음 설치부터 적용되며 기존 게임을 이동하지 않습니다. Steam 새 위치는 Steam 설정 → 저장공간에서 먼저 등록해 주세요.", TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(new TextBlock { Text = "설치 시 용량 한도를 넘으면 가장 오래 플레이하지 않은 게임부터 정리 대상을 계산하고, 추가 확인 없이 해당 게임을 자동 제거합니다. 플레이 기록이 없는 게임을 먼저 정리하며 실행 중인 게임은 제외합니다. 폴더 변경은 다음 설치부터 적용되며 기존 게임을 이동하지 않습니다. Steam 게임은 자동 정리 대상에 포함되지 않습니다.", TextWrapping = TextWrapping.Wrap });
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
             var save = new Button { Content = "저장공간 설정 저장", Margin = new Thickness(0, 0, 8, 0) };
             var refresh = new Button { Content = "현재 사용량 확인" };
@@ -93,10 +91,10 @@ namespace Playnite.DesktopApp.HoleInOne
             panel.Children.Add(status);
             save.Click += async (sender, args) =>
             {
-                save.IsEnabled = refresh.IsEnabled = steam.IsEnabled = epic.IsEnabled = maximum.IsEnabled = automatic.IsEnabled = false;
+                save.IsEnabled = refresh.IsEnabled = epic.IsEnabled = maximum.IsEnabled = automatic.IsEnabled = false;
                 try
                 {
-                    var updated = LauncherSettingsService.PrepareStorage(steam.Text, epic.Text, automatic.IsChecked == true, maximum.Text);
+                    var updated = LauncherSettingsService.PrepareStorage(epic.Text, automatic.IsChecked == true, maximum.Text);
                     var capacity = updated.MaximumStorageGiB;
                     status.Text = "현재 사용량 확인 중…";
                     var installedGames = DesktopApplication.Current.Database.Games.ToList();
@@ -111,7 +109,7 @@ namespace Playnite.DesktopApp.HoleInOne
                     status.Text = "저장했습니다. 다음 설치부터 적용됩니다.";
                 }
                 catch (Exception error) { status.Text = error.Message; }
-                finally { save.IsEnabled = refresh.IsEnabled = steam.IsEnabled = epic.IsEnabled = automatic.IsEnabled = true; maximum.IsEnabled = automatic.IsChecked != true; }
+                finally { save.IsEnabled = refresh.IsEnabled = epic.IsEnabled = automatic.IsEnabled = true; maximum.IsEnabled = automatic.IsChecked != true; }
             };
             refresh.Click += async (sender, args) =>
             {
@@ -130,7 +128,7 @@ namespace Playnite.DesktopApp.HoleInOne
 
         private void AddProtectedGamesSettings(Panel panel)
         {
-            panel.Children.Add(new TextBlock { Text = "자동 제거 제외 게임", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 12, 0, 6) });
+            panel.Children.Add(new TextBlock { Text = "Epic 자동 제거 제외 게임", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 12, 0, 6) });
             panel.Children.Add(new TextBlock { Text = "체크한 게임은 공간 확보 과정에서 절대 제거하지 않습니다. 변경은 즉시 저장됩니다. 보호한 게임도 현재 사용량에는 포함되며, 공간이 부족하면 설치를 중단합니다.", TextWrapping = TextWrapping.Wrap });
             var list = new StackPanel();
             panel.Children.Add(new ScrollViewer { Content = list, MaxHeight = 220, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 8, 0, 4) });
@@ -141,8 +139,8 @@ namespace Playnite.DesktopApp.HoleInOne
             {
                 list.Children.Clear();
                 var settings = LauncherSettings.Load();
-                var games = DesktopApplication.Current.Database.Games.Where(game => game.IsInstalled).OrderBy(game => game.Name).ToList();
-                if (games.Count == 0) list.Children.Add(new TextBlock { Text = "현재 설치된 게임이 없습니다." });
+                var games = DesktopApplication.Current.Database.Games.Where(game => game.IsInstalled && game.PluginId == BuiltinStoreLibrary.EpicId).OrderBy(game => game.Name).ToList();
+                if (games.Count == 0) list.Children.Add(new TextBlock { Text = "현재 설치된 Epic 게임이 없습니다." });
                 foreach (var game in games)
                 {
                     var checkbox = new CheckBox { Content = new TextBlock { Text = game.Name, TextWrapping = TextWrapping.Wrap, Foreground = System.Windows.Media.Brushes.White },

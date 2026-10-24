@@ -1,7 +1,6 @@
 using Newtonsoft.Json;
 using System;
 using System.IO;
-using System.Linq;
 using System.Collections.Generic;
 
 namespace Playnite.HoleInOne
@@ -17,7 +16,6 @@ namespace Playnite.HoleInOne
         // Retain the serialized name for existing Epic installations/settings.
         public string DownloadDirectory { get; set; } = Path.Combine(
             Environment.GetEnvironmentVariable("ProgramW6432") ?? Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Epic Games");
-        public string SteamInstallDirectory { get; set; } = DefaultSteamDirectory();
         public HashSet<Guid> ProtectedGameIds { get; set; } = new HashSet<Guid>();
         public bool IsGameProtected(Guid id) => ProtectedGameIds?.Contains(id) == true;
         private long? maximumStorageGiB;
@@ -26,23 +24,13 @@ namespace Playnite.HoleInOne
         public void UseAutomaticStorageLimit() => maximumStorageGiB = null;
         public long MaximumStorageGiB
         {
-            get => maximumStorageGiB ?? new[] { SteamInstallDirectory, DownloadDirectory }
-                .Select(path => Path.GetPathRoot(Path.GetFullPath(path)))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Sum(drive => new DriveInfo(drive).TotalSize) / (1024L * 1024 * 1024);
+            get => maximumStorageGiB ?? new DriveInfo(Path.GetPathRoot(Path.GetFullPath(DownloadDirectory))).TotalSize / (1024L * 1024 * 1024);
             set => maximumStorageGiB = value;
-        }
-
-        private static string DefaultSteamDirectory()
-        {
-            using (var key = Microsoft.Win32.Registry.CurrentUser?.OpenSubKey(@"Software\Valve\Steam"))
-                return Path.Combine(key?.GetValue("SteamPath") as string ?? Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam"), "steamapps", "common");
         }
 
         public void ValidateStorage()
         {
-            foreach (var path in new[] { DownloadDirectory, SteamInstallDirectory })
+            foreach (var path in new[] { DownloadDirectory })
             {
                 if (string.IsNullOrWhiteSpace(path) || !Path.IsPathRooted(path) || path.IndexOf(':') != 1)
                     throw new ArgumentException("설치 폴더는 로컬 드라이브의 절대 경로여야 합니다.");
