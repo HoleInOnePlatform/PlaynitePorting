@@ -9,7 +9,8 @@ namespace Playnite.DesktopApp.HoleInOne
         {
             Title = "HoleInOne · 게임 준비";
             Width = 460; SizeToContent = SizeToContent.Height;
-            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            Owner = Application.Current.MainWindow;
+            WindowStartupLocation = Owner == null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner;
             ShowMinimizeButton = false; ShowMaximizeButton = false; ResizeMode = ResizeMode.NoResize;
             SetResourceReference(StyleProperty, "StandardWindowStyle");
             Resources.Add(typeof(TextBlock), Application.Current.FindResource("BaseTextBlockStyle"));

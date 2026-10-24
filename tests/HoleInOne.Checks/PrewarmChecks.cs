@@ -53,7 +53,9 @@ static class PrewarmChecks
         {
             var pending = sessions.PlayAsync("steam-2", cancel.Token); cancel.Cancel(); await Reject(() => pending);
         }
-        await Reject(() => sessions.PlayAsync("steam-2868840", default));
+        try { await sessions.PlayAsync("steam-2868840", default); throw new Exception("cleanup failure hidden"); }
+        catch (CloudSessionCleanupPendingException error)
+        { check(error.Message.Contains("이전 게임 정리") && error.InnerException is HttpRequestException, "pending cleanup has actionable user guidance and retains diagnostic cause"); }
         check(cloud.PrepareIds.Count == 1, "failed cleanup blocks allocating another game");
         cloud.FailCancel = false; cloud.Pending = null;
         await sessions.PlayAsync("steam-2868840", default);
@@ -64,6 +66,55 @@ static class PrewarmChecks
         var inflight = sessions.PlayAsync("steam-2", default);
         await sessions.StopAsync(default); await Reject(() => inflight);
         check(cloud.Cancels.Count == 1, "shutdown cancels in-flight Play and cleans exactly once");
+
+        cloud = new FakeWarmBackend { Pending = new TaskCompletionSource<bool>(), CancelPending = new TaskCompletionSource<bool>() };
+        sessions = new PreparedSessionManager(cloud, delay: NoDelay);
+        inflight = sessions.PlayAsync("steam-2", default);
+        var shutdown = sessions.StopAsync(default);
+        await cloud.CancelEntered.Task;
+        check(!shutdown.IsCompleted, "shutdown waits for in-flight cancellation acknowledgement before completing");
+        cloud.CancelPending.SetResult(true);
+        await shutdown; await Reject(() => inflight);
+        check(cloud.Cancels.Count == 1, "delayed cleanup is not duplicated by shutdown");
+        check(PreparedSessionManager.StopTimeout > PreparedSessionManager.CleanupTimeout + PreparedSessionManager.CleanupTimeout &&
+            PreparedSessionManager.ShutdownWaitTimeout > PreparedSessionManager.StopTimeout,
+            "exit budget covers Play cleanup, one Stop retry and scheduling margin");
+
+        foreach (var rejected in new[] {
+            (Status: HttpStatusCode.BadRequest, Code: (string)null),
+            (Status: HttpStatusCode.Unauthorized, Code: (string)null),
+            (Status: HttpStatusCode.Forbidden, Code: (string)null),
+            (Status: HttpStatusCode.NotFound, Code: "game_not_configured") })
+        {
+            var rejectedWire = new WarmWire { Status = rejected.Status, ErrorCode = rejected.Code };
+            using var rejectedBackend = new BackendConnection("http://localhost:5010/", handler: rejectedWire);
+            var manager = new PreparedSessionManager(rejectedBackend, delay: NoDelay);
+            await Reject(() => manager.PlayAsync("steam-2868840", default));
+            await manager.StopAsync(default);
+            check(rejectedWire.Calls.Count == 1, "definite pre-allocation rejection leaves no cancellation record, including on shutdown");
+        }
+        foreach (var uncertain in new[] { HttpStatusCode.ServiceUnavailable, HttpStatusCode.RequestTimeout, HttpStatusCode.TooManyRequests })
+        {
+            var uncertainWire = new WarmWire { Status = HttpStatusCode.BadRequest };
+            uncertainWire.PrepareStatuses.Enqueue(uncertain);
+            using var uncertainBackend = new BackendConnection("http://localhost:5010/", handler: uncertainWire);
+            await Reject(() => new PreparedSessionManager(uncertainBackend, delay: NoDelay).PlayAsync("steam-2868840", default));
+            check(uncertainWire.PrepareIds.Count == 2 && uncertainWire.PrepareIds.Distinct().Count() == 1 && uncertainWire.Calls.Last().EndsWith("/cancel"),
+                "later definitive rejection cannot erase an earlier unknown allocation outcome");
+        }
+        var claimWire = new WarmWire { Status = HttpStatusCode.Forbidden };
+        claimWire.PrepareStatuses.Enqueue(HttpStatusCode.OK);
+        using (var claimBackend = new BackendConnection("http://localhost:5010/", handler: claimWire))
+        {
+            await Reject(() => new PreparedSessionManager(claimBackend, delay: NoDelay).PlayAsync("steam-2868840", default));
+            check(claimWire.Calls.Last().EndsWith("/cancel"), "claim rejection still cleans up the successful prepare");
+        }
+        var malformedWire = new WarmWire { MalformedPrepare = true };
+        using (var malformedBackend = new BackendConnection("http://localhost:5010/", handler: malformedWire))
+        {
+            await Reject(() => new PreparedSessionManager(malformedBackend, delay: NoDelay).PlayAsync("steam-2868840", default));
+            check(malformedWire.Calls.Last().EndsWith("/cancel"), "malformed successful prepare response remains an uncertain allocation requiring cleanup");
+        }
 
         var retryWire = new WarmWire { Status = HttpStatusCode.ServiceUnavailable };
         using (var retryBackend = new BackendConnection("http://localhost:5010/", handler: retryWire))
@@ -127,7 +178,8 @@ static class PrewarmChecks
     private sealed class FakeWarmBackend : IPreparedSessionBackend
     {
         public List<string> PrepareIds = new(), Games = new(), Cancels = new();
-        public TaskCompletionSource<bool> Pending;
+        public TaskCompletionSource<bool> Pending, CancelPending;
+        public TaskCompletionSource<bool> CancelEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool FailFirstPrepare, ExpireFirstPlay, FailCancel;
         public int Plays;
         public async Task<PreparedCloudSession> PrepareSessionAsync(string requestId, string gameId, CancellationToken ct)
@@ -137,11 +189,12 @@ static class PrewarmChecks
             if (FailFirstPrepare && PrepareIds.Count == 1) throw new HttpRequestException("lost response");
             return new() { SessionId = "warm-" + PrepareIds.Distinct().Count(), GameId = gameId, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(9) };
         }
-        public Task CancelPreparationAsync(string id, CancellationToken ct)
+        public async Task CancelPreparationAsync(string id, CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested(); Cancels.Add(id);
+            CancelEntered.TrySetResult(true);
+            if (CancelPending != null) await CancelPending.Task.WaitAsync(ct);
             if (FailCancel) throw new HttpRequestException("lost cleanup");
-            return Task.CompletedTask;
         }
         public Task<CloudSession> PlayPreparedSessionAsync(string id, string game, CancellationToken ct)
         {
@@ -158,6 +211,8 @@ static class PrewarmChecks
         public string Url = "http://localhost:5010/stream/v5/index.html#warm-1/" + new string('a',64);
         public HttpStatusCode Status = HttpStatusCode.OK;
         public string ErrorCode;
+        public bool MalformedPrepare;
+        public Queue<HttpStatusCode> PrepareStatuses = new();
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Calls.Add(request.RequestUri.AbsolutePath);
@@ -166,8 +221,10 @@ static class PrewarmChecks
             object body = request.RequestUri.AbsolutePath.EndsWith("/prepare")
                 ? new { sessionId = "warm-1", gameId = "steam-2868840", expiresAt = DateTimeOffset.UtcNow.AddMinutes(9) }
                 : new { sessionId = "warm-1", gameId = "steam-2868840", streamUrl = Url };
-            return Task.FromResult(new HttpResponseMessage(Status) { Content = new StringContent(
-                JsonConvert.SerializeObject(ErrorCode == null ? body : new { errorCode = ErrorCode, error = "private-detail" }), Encoding.UTF8, "application/json") });
+            var preparing = request.RequestUri.AbsolutePath.EndsWith("/prepare");
+            var status = preparing && PrepareStatuses.Count > 0 ? PrepareStatuses.Dequeue() : Status;
+            var text = preparing && MalformedPrepare ? "{}" : JsonConvert.SerializeObject(ErrorCode == null ? body : new { errorCode = ErrorCode, error = "private-detail" });
+            return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(text, Encoding.UTF8, "application/json") });
         }
     }
 }

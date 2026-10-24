@@ -57,7 +57,7 @@ namespace Playnite.DesktopApp.HoleInOne
         {
             try
             {
-                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+                using (var timeout = new CancellationTokenSource(PreparedSessionManager.StopTimeout))
                     await context.Sessions.StopAsync(timeout.Token).ConfigureAwait(false);
             }
             catch (Exception error)
@@ -66,8 +66,9 @@ namespace Playnite.DesktopApp.HoleInOne
         }
         public static void Shutdown()
         {
-            // WPF Exit cannot await. All network waits below avoid its synchronization context.
-            try { ResetAsync().Wait(TimeSpan.FromSeconds(5)); }
+            // WPF Exit cannot await. The wait covers in-flight Play cleanup plus a Stop retry.
+            // All network waits below avoid its synchronization context.
+            try { ResetAsync().Wait(PreparedSessionManager.ShutdownWaitTimeout); }
             catch (Exception) { }
         }
     }
