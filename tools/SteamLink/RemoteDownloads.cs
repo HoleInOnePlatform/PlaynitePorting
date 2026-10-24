@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using SteamKit2;
 using System.Diagnostics;
 using System.Net.NetworkInformation;
+using System.Security.Cryptography;
 
 namespace HoleInOne.SteamLink;
 
@@ -10,6 +11,7 @@ internal static class RemoteDownloads
 {
     internal static async Task RunAsync(Credential credential, uint appId, bool uninstall, CancellationToken ct)
     {
+        SteamDiagnostics.Write(uninstall ? "uninstall" : "install", "started");
         if (appId == 0) throw new ProbeFailure("REMOTE_INVALID_APP");
         credential.Validate(DateTimeOffset.UtcNow);
         RequireLocalClient(credential.SteamId);
@@ -17,18 +19,46 @@ internal static class RemoteDownloads
         deadline.CancelAfter(TimeSpan.FromSeconds(90));
         var client = new SteamClient();
         var callbacks = new CallbackManager(client);
+        var user = client.GetHandler<SteamUser>()!;
         var connected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loggedOn = new TaskCompletionSource<SteamUser.LoggedOnCallback>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var onConnect = callbacks.Subscribe<SteamClient.ConnectedCallback>(_ => connected.TrySetResult());
-        using var onDisconnect = callbacks.Subscribe<SteamClient.DisconnectedCallback>(_ => connected.TrySetException(new ProbeFailure("REMOTE_DISCONNECTED")));
+        using var onLogon = callbacks.Subscribe<SteamUser.LoggedOnCallback>(reply => loggedOn.TrySetResult(reply));
+        using var onDisconnect = callbacks.Subscribe<SteamClient.DisconnectedCallback>(_ =>
+        {
+            connected.TrySetException(new ProbeFailure("REMOTE_DISCONNECTED"));
+            loggedOn.TrySetException(new ProbeFailure("REMOTE_DISCONNECTED"));
+        });
         using var stop = new CancellationTokenSource();
         var pump = Task.Run(() => { while (!stop.IsCancellationRequested) callbacks.RunWaitCallbacks(TimeSpan.FromMilliseconds(100)); });
         try
         {
+            SteamDiagnostics.Write("connect", "started");
             client.Connect();
             await connected.Task.WaitAsync(deadline.Token);
-            // Generate a short-lived Web API token without logging another desktop client on.
+            SteamDiagnostics.Write("connect", "ok");
+            // Client refresh tokens require an authenticated CM session for this API.
+            // Use a distinct login ID so the helper does not reuse the native client's login session.
+            SteamDiagnostics.Write("LogOn", "started");
+            user.LogOn(new SteamUser.LogOnDetails
+            {
+                Username = credential.AccountName,
+                AccessToken = credential.RefreshToken,
+                ShouldRememberPassword = true,
+                LoginID = BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4)),
+                MachineName = "HoleInOne-InstallHelper"
+            });
+            var login = await loggedOn.Task.WaitAsync(deadline.Token);
+            SteamDiagnostics.Write("LogOn", "response", (int)login.Result);
+            if (login.Result != EResult.OK)
+                throw new ProbeFailure(login.Result is EResult.InvalidPassword or EResult.Expired or EResult.AccessDenied
+                    ? "STEAM_LOGON_REJECTED" : "REMOTE_LOGON_UNAVAILABLE");
+            if (client.SteamID?.ConvertToUInt64() != credential.SteamId)
+                throw new ProbeFailure("REMOTE_ACCOUNT_MISMATCH");
+            SteamDiagnostics.Write("GenerateAccessTokenForApp", "started");
             var access = await client.Authentication.GenerateAccessTokenForAppAsync(new SteamID(credential.SteamId),
                 credential.RefreshToken, allowRenewal: false).WaitAsync(deadline.Token);
+            SteamDiagnostics.Write("GenerateAccessTokenForApp", "ok");
             using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(30) };
             var addresses = NetworkInterface.GetAllNetworkInterfaces()
                 .Where(n => n.OperationalStatus == OperationalStatus.Up)
@@ -38,8 +68,13 @@ internal static class RemoteDownloads
             await remote.RequestAsync(appId, uninstall, Environment.MachineName, addresses,
                 () => RequireLocalClient(credential.SteamId), deadline.Token);
         }
-        catch (SteamKit2.Authentication.AuthenticationException) { throw new ProbeFailure("STEAM_LOGON_REJECTED"); }
-        finally { client.Disconnect(); stop.Cancel(); await pump; }
+        catch (SteamKit2.Authentication.AuthenticationException error)
+        {
+            SteamDiagnostics.Write("GenerateAccessTokenForApp", "authentication_failed", (int)error.Result);
+            // An access-token exchange failure does not prove the saved login is expired.
+            throw new ProbeFailure("REMOTE_TOKEN_EXCHANGE_FAILED");
+        }
+        finally { user.LogOff(); client.Disconnect(); stop.Cancel(); await pump; }
     }
 
     private static void RequireLocalClient(ulong steamId)

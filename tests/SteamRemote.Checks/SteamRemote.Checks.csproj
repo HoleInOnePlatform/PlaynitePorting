@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../tools/SteamLink/RemoteDownloadApi.cs" Link="RemoteDownloadApi.cs" />
+    <Compile Include="../../tools/SteamLink/SteamDiagnostics.cs" Link="SteamDiagnostics.cs" />
   </ItemGroup>
 </Project>

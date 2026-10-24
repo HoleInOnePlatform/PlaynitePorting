@@ -2,6 +2,8 @@ using HoleInOne.SteamLink;
 using System.Net;
 
 var count = 0;
+var diagnostics = new List<string>();
+SteamDiagnostics.Sink = diagnostics.Add;
 async Task Check(string name, Func<Task> action)
 {
     await action(); count++; Console.WriteLine("PASS " + name);
@@ -76,6 +78,21 @@ await Check("network failures are sanitized without retry or fallback", async ()
 await Check("malformed success body is rejected", async () =>
 {
     var wire = new Wire { Body = "not-json" }; await Reject(wire, "REMOTE_UNCONFIRMED");
+});
+await Check("diagnostics retain Steam rejection without credentials or request URLs", () =>
+{
+    if (!diagnostics.Any(line => line.Contains("stage=InstallClientApp outcome=response result=15 http=200")))
+        throw new Exception("Missing Steam result");
+    if (diagnostics.Any(line => line.Contains("fixture-secret") || line.Contains("access_token") ||
+        line.Contains("THIS-PC") || line.Contains("192.168.1.2") || line.Contains("https://")))
+        throw new Exception("Sensitive diagnostic data");
+    return Task.CompletedTask;
+});
+await Check("diagnostic write failure does not block installation", async () =>
+{
+    SteamDiagnostics.Sink = _ => throw new IOException("fixture failure");
+    try { await Run(new Wire()); }
+    finally { SteamDiagnostics.Sink = diagnostics.Add; }
 });
 Console.WriteLine($"{count} remote Steam checks passed.");
 
