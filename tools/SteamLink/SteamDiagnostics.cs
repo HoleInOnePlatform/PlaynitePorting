@@ -11,6 +11,7 @@ internal static class SteamDiagnostics
     {
         try
         {
+            if (Environment.GetEnvironmentVariable("HOLEINONE_STEAM_DIAGNOSTICS") != "1") return;
             var line = $"{DateTimeOffset.UtcNow:O} attempt={Attempt} stage={stage} outcome={outcome} result={result?.ToString(CultureInfo.InvariantCulture) ?? "-"} http={httpStatus?.ToString(CultureInfo.InvariantCulture) ?? "-"}";
             Sink(line);
         }

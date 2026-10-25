@@ -36,7 +36,9 @@ ClientComm은 Steam이 사용하는 내부 원격 다운로드 인터페이스�
 
 ## 설치 인증 오류 진단
 
-진단 브랜치의 모듈로 재현하면 `%LOCALAPPDATA%\HoleInOne\Logs\steam-debug-날짜-PID.log`에 기록합니다.
+진단 로그는 기본적으로 꺼져 있습니다. 환경 변수 `HOLEINONE_STEAM_DIAGNOSTICS=1`을 설정한 프로세스에서 앱을 새로 실행하면 `%LOCALAPPDATA%\HoleInOne\Logs\steam-debug-날짜-PID.log`에 기록합니다.
+PowerShell에서는 `$env:HOLEINONE_STEAM_DIAGNOSTICS = '1'`을 설정하고 같은 창에서 앱을 실행합니다. 기존 앱은 먼저 종료해야 합니다.
+진단 후 `Remove-Item Env:HOLEINONE_STEAM_DIAGNOSTICS`로 설정을 지우고 앱을 재시작합니다.
 시각은 UTC이며 `attempt`가 같은 줄이 한 모듈 실행에 해당합니다. 최근 파일에서 아래 순서로 확인합니다.
 
 - `GenerateAccessTokenForApp authentication_failed`: `result`가 SteamKit EResult의 실제 숫자 값입니다. 기존 UI는 모든 AuthenticationException을 재인증 안내로 합치므로, 이 값으로 원인을 구분합니다.
@@ -48,5 +50,8 @@ ClientComm은 Steam이 사용하는 내부 원격 다운로드 인터페이스�
 로그 쓰기에 실패해도 설치 동작은 유지됩니다. 로그는 자동 삭제하지 않으므로 진단 후 해당 steam-debug 파일을 정리할 수 있습니다.
 기존 실행 파일에는 적용되지 않습니다. `build/Build-SteamLink.ps1 -OutputDirectory <배포폴더>/Tools/SteamLink`로 모듈을 빌드한 배포본에서 재현해야 합니다.
 
-2026-10-24 재현 로그에서 연결 성공 후 인증되지 않은 토큰 발급이 result=15로 거절됨을 확인했습니다.
-참고: https://github.com/DoctorMcKay/node-steam-session#refreshaccesstoken
+## 동시 세션 수동 검증 (머지 전 필요)
+
+같은 계정으로 PC Steam에서 게임을 실행한 상태에서 다른 게임의 설치·제거를 요청합니다.
+요청 성공·실패·취소 후 기존 Steam 로그인과 실행 중 게임의 온라인 연결이 유지되는지 확인합니다.
+이 검증은 모의 HTTP 자동 검사로 대체할 수 없으며 아직 완료되지 않았습니다.

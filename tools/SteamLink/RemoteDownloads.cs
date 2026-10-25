@@ -44,7 +44,7 @@ internal static class RemoteDownloads
             {
                 Username = credential.AccountName,
                 AccessToken = credential.RefreshToken,
-                ShouldRememberPassword = true,
+                ShouldRememberPassword = false,
                 LoginID = BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4)),
                 MachineName = "HoleInOne-InstallHelper"
             });
@@ -74,7 +74,10 @@ internal static class RemoteDownloads
             // An access-token exchange failure does not prove the saved login is expired.
             throw new ProbeFailure("REMOTE_TOKEN_EXCHANGE_FAILED");
         }
-        finally { user.LogOff(); client.Disconnect(); stop.Cancel(); await pump; }
+        finally
+        {
+            await RemoteSessionCleanup.RunAsync(user.LogOff, () => client.Disconnect(), stop.Cancel, pump);
+        }
     }
 
     private static void RequireLocalClient(ulong steamId)
