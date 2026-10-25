@@ -21,13 +21,13 @@ namespace Playnite.DesktopApp.HoleInOne
             LauncherLogin.Forget();
             return LauncherSettings.Load();
         }
-        public static LauncherSettings PrepareStorage(string steam, string epic, bool automatic, string maximum)
+        public static LauncherSettings PrepareStorage(string epic, bool automatic, string maximum)
         {
             RequireIdle();
             long capacity = 0;
             if (!automatic && !long.TryParse(maximum, out capacity)) throw new ArgumentException("최대 용량은 GiB 단위의 정수로 입력해 주세요.");
             var updated = LauncherSettings.Load();
-            updated.SteamInstallDirectory = steam.Trim(); updated.DownloadDirectory = epic.Trim();
+            updated.DownloadDirectory = epic.Trim();
             if (automatic) updated.UseAutomaticStorageLimit(); else updated.MaximumStorageGiB = capacity;
             updated.ValidateStorage();
             return updated;

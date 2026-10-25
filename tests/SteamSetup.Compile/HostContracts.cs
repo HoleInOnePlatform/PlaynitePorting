@@ -8,7 +8,7 @@ namespace Playnite.HoleInOne { public static class BuiltinStoreLibrary { public 
 namespace Playnite.DesktopApp {
  public sealed class DesktopApplication { public static DesktopApplication Current=>new DesktopApplication();public Model MainModel=>new Model(); public Database Database=>new Database(); }
  public sealed class Database { public System.Collections.Generic.List<Game> Games=>new System.Collections.Generic.List<Game>(); }
- public sealed class Game { public Guid Id {get;set;} public string Name {get;set;} public string InstallDirectory {get;set;} public bool IsInstalled {get;set;} }
+ public sealed class Game { public Guid Id {get;set;} public Guid PluginId {get;set;} public string Name {get;set;} public string InstallDirectory {get;set;} public bool IsInstalled {get;set;} }
  public sealed class Model { public void OpenPluginSettings(Guid id){} }
 }
 namespace Playnite.DesktopApp.HoleInOne { public static class InstantPlayCoordinator { public static int ActiveStreamCount=>0; } }

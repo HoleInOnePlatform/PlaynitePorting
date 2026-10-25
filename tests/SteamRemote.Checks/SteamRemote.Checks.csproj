@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../source/BuiltinLibraries/SteamLibrary/Services/SteamInstallService.cs" Link="SteamInstallService.cs" />
+    <Compile Include="../../tools/SteamLink/RemoteSessionCleanup.cs" Link="RemoteSessionCleanup.cs" />
+    <Compile Include="../../tools/SteamLink/RemoteDownloadApi.cs" Link="RemoteDownloadApi.cs" />
+    <Compile Include="../../tools/SteamLink/SteamDiagnostics.cs" Link="SteamDiagnostics.cs" />
+  </ItemGroup>
+</Project>
