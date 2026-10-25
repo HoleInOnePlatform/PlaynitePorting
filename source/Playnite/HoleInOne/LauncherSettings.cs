@@ -30,13 +30,10 @@ namespace Playnite.HoleInOne
 
         public void ValidateStorage()
         {
-            foreach (var path in new[] { DownloadDirectory })
-            {
-                if (string.IsNullOrWhiteSpace(path) || !Path.IsPathRooted(path) || path.IndexOf(':') != 1)
-                    throw new ArgumentException("설치 폴더는 로컬 드라이브의 절대 경로여야 합니다.");
-                var full = Path.GetFullPath(path).TrimEnd('\\', '/');
-                if (full.Length <= 3) throw new ArgumentException("드라이브 전체를 설치 폴더로 지정할 수 없습니다.");
-            }
+            if (string.IsNullOrWhiteSpace(DownloadDirectory) || !Path.IsPathRooted(DownloadDirectory) || DownloadDirectory.IndexOf(':') != 1)
+                throw new ArgumentException("설치 폴더는 로컬 드라이브의 절대 경로여야 합니다.");
+            var full = Path.GetFullPath(DownloadDirectory).TrimEnd('\\', '/');
+            if (full.Length <= 3) throw new ArgumentException("드라이브 전체를 설치 폴더로 지정할 수 없습니다.");
             if (MaximumStorageGiB <= 0 || MaximumStorageGiB > long.MaxValue / (1024L * 1024 * 1024))
                 throw new ArgumentException("최대 저장공간은 1 GiB 이상의 유효한 정수여야 합니다.");
         }

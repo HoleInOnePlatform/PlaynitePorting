@@ -139,6 +139,7 @@ await Check("cleanup failures preserve the original error and stop callbacks", a
     await RemoteSessionCleanup.RunAsync(() => { }, () => { }, () => { },
         Task.FromException(new InvalidOperationException("fixture pump failure")));
 });
+await RemovalChecks.RunAsync(Check);
 Console.WriteLine($"{count} remote Steam checks passed.");
 
 sealed class Wire : HttpMessageHandler

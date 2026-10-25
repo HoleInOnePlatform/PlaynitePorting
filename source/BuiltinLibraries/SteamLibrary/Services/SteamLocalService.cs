@@ -343,6 +343,7 @@ namespace SteamLibrary.Services
                     else if (child.Children.HasItems())
                     {
                         var path = child.Children.FirstOrDefault(a => a.Name?.Equals("path", StringComparison.OrdinalIgnoreCase) == true);
+                        if (path == null) throw new InvalidDataException("Steam library path is missing.");
                         if (!path.Value.IsNullOrEmpty())
                         {
                             dbs.Add(path.Value);
@@ -354,11 +355,11 @@ namespace SteamLibrary.Services
             return dbs;
         }
 
-        internal static HashSet<string> GetLibraryFolders()
+        internal static HashSet<string> GetLibraryFolders(bool requireComplete = false)
         {
             var dbs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Steam.InstallationPath };
             var configPath = Path.Combine(Steam.InstallationPath, "steamapps", "libraryfolders.vdf");
-            if (!File.Exists(configPath))
+            if (!requireComplete && !File.Exists(configPath))
             {
                 return dbs;
             }
@@ -368,7 +369,8 @@ namespace SteamLibrary.Services
                 using (var fs = new FileStream(configPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                 {
                     var kv = new KeyValue();
-                    kv.ReadAsText(fs);
+                    if (!kv.ReadAsText(fs) && requireComplete)
+                        throw new InvalidDataException("Steam library metadata is incomplete.");
                     foreach (var dir in GetLibraryFolders(kv))
                     {
                         if (Directory.Exists(dir))
@@ -377,12 +379,13 @@ namespace SteamLibrary.Services
                         }
                         else
                         {
+                            if (requireComplete) throw new IOException("Steam library is unavailable.");
                             logger.Warn($"Found external Steam directory, but path doesn't exists: {dir}");
                         }
                     }
                 }
             }
-            catch (Exception e) when (!Debugger.IsAttached)
+            catch (Exception e) when (!requireComplete && !Debugger.IsAttached)
             {
                 logger.Error(e, "Failed to get additional Steam library folders.");
             }

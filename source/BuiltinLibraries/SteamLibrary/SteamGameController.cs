@@ -174,20 +174,12 @@ namespace SteamLibrary
         private async Task WaitForUninstallAsync(GameID id)
         {
             var token = watcherToken.Token;
-            var deadline = DateTime.UtcNow.AddMinutes(5);
-            while (DateTime.UtcNow < deadline)
-            {
-                token.ThrowIfCancellationRequested();
-                // Presence in any registered library prevents a false completion.
-                var present = SteamInstallService.CaptureManifests(id.AppID, SteamLocalService.GetLibraryFolders()).Count != 0;
-                if (!present)
-                {
-                    InvokeOnUninstalled(new GameUninstalledEventArgs());
-                    return;
-                }
-                await Task.Delay(1000, token).ConfigureAwait(false);
-            }
-            throw new TimeoutException("Steam 제거 완료를 확인하지 못했습니다. Steam 다운로드 상태를 확인해 주세요.");
+            await SteamInstallService.WaitForRemovalAsync(
+                () => SteamInstallService.CaptureManifests(id.AppID,
+                    SteamLocalService.GetLibraryFolders(requireComplete: true), requireReadable: true).Count != 0,
+                token, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            InvokeOnUninstalled(new GameUninstalledEventArgs());
         }
     }
 
