@@ -37,7 +37,9 @@ namespace Playnite.HoleInOne
                     var code = (string)message["code"];
                     if (code == "cancelled_or_timeout") { ct.ThrowIfCancellationRequested(); throw new TimeoutException("Steam 연결 시간이 초과되었습니다."); }
                     if (code != null && code.StartsWith("REMOTE_", StringComparison.Ordinal))
-                        throw new InvalidOperationException(code == "REMOTE_LOCAL_CLIENT_REQUIRED"
+                        throw new InvalidOperationException(code == "REMOTE_TOKEN_EXCHANGE_FAILED"
+                            ? "Steam 설치 요청용 토큰 발급이 거절되었습니다. 인증 만료로 단정할 수 없습니다. SteamLink README의 진단 로그 활성화 절차로 재현한 뒤 %LOCALAPPDATA%\\HoleInOne\\Logs의 steam-debug 로그를 확인해 주세요."
+                            : code == "REMOTE_LOCAL_CLIENT_REQUIRED"
                             ? "이 PC의 Steam을 실행하고 연결한 계정으로 로그인해 주세요. 설치·제거 요청으로 Steam 창을 자동 실행하지 않습니다."
                             : code == "REMOTE_CLIENT_NOT_FOUND" || code == "REMOTE_CLIENT_AMBIGUOUS"
                             ? "Steam 서버에서 이 PC를 확인하지 못했습니다. Steam 온라인 상태를 확인한 뒤 다시 시도해 주세요."

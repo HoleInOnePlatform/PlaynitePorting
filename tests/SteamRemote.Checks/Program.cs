@@ -4,7 +4,16 @@ using System.Net;
 var count = 0;
 async Task Check(string name, Func<Task> action)
 {
-    await action(); count++; Console.WriteLine("PASS " + name);
+    var originalSink = SteamDiagnostics.Sink;
+    var originalFlag = Environment.GetEnvironmentVariable("HOLEINONE_STEAM_DIAGNOSTICS");
+    SteamDiagnostics.Sink = _ => { };
+    Environment.SetEnvironmentVariable("HOLEINONE_STEAM_DIAGNOSTICS", "1");
+    try { await action(); count++; Console.WriteLine("PASS " + name); }
+    finally
+    {
+        SteamDiagnostics.Sink = originalSink;
+        Environment.SetEnvironmentVariable("HOLEINONE_STEAM_DIAGNOSTICS", originalFlag);
+    }
 }
 async Task Run(Wire wire, bool uninstall = false, Action? local = null, uint appId = 42)
 {
@@ -76,6 +85,59 @@ await Check("network failures are sanitized without retry or fallback", async ()
 await Check("malformed success body is rejected", async () =>
 {
     var wire = new Wire { Body = "not-json" }; await Reject(wire, "REMOTE_UNCONFIRMED");
+});
+await Check("diagnostics retain Steam rejection without credentials or request URLs", async () =>
+{
+    var diagnostics = new List<string>();
+    SteamDiagnostics.Sink = diagnostics.Add;
+    await Reject(new Wire { Result = "15" }, "REMOTE_REQUEST_FAILED");
+    await Reject(new Wire { NetworkFailure = true }, "REMOTE_REQUEST_FAILED");
+    if (!diagnostics.Any(line => line.Contains("stage=InstallClientApp outcome=response result=15 http=200")))
+        throw new Exception("Missing Steam result");
+    if (diagnostics.Any(line => line.Contains("fixture-secret") || line.Contains("access_token") ||
+        line.Contains("THIS-PC") || line.Contains("192.168.1.2") || line.Contains("https://")))
+        throw new Exception("Sensitive diagnostic data");
+});
+await Check("diagnostic write failure does not block installation", async () =>
+{
+    SteamDiagnostics.Sink = _ => throw new IOException("fixture failure");
+    await Run(new Wire());
+});
+await Check("diagnostics require explicit opt-in", async () =>
+{
+    var diagnostics = new List<string>();
+    SteamDiagnostics.Sink = diagnostics.Add;
+    foreach (var flag in new string?[] { null, "0", "true" })
+    {
+        Environment.SetEnvironmentVariable("HOLEINONE_STEAM_DIAGNOSTICS", flag);
+        await Run(new Wire());
+        if (diagnostics.Count != 0) throw new Exception("Diagnostics were not disabled");
+    }
+    Environment.SetEnvironmentVariable("HOLEINONE_STEAM_DIAGNOSTICS", "1");
+    await Run(new Wire());
+    if (diagnostics.Count == 0) throw new Exception("Opt-in did not enable diagnostics");
+});
+await Check("cleanup failures preserve the original error and stop callbacks", async () =>
+{
+    var steps = new List<string>();
+    var stopped = new TaskCompletionSource();
+    async Task Request()
+    {
+        try { throw new ProbeFailure("REMOTE_DISCONNECTED"); }
+        finally
+        {
+            await RemoteSessionCleanup.RunAsync(
+                () => { steps.Add("logoff"); throw new InvalidOperationException(); },
+                () => { steps.Add("disconnect"); throw new InvalidOperationException(); },
+                () => { steps.Add("stop"); stopped.SetResult(); },
+                stopped.Task);
+        }
+    }
+    try { await Request(); throw new Exception("Original failure lost"); }
+    catch (ProbeFailure error) when (error.Code == "REMOTE_DISCONNECTED") { }
+    if (!steps.SequenceEqual(new[] { "logoff", "disconnect", "stop" })) throw new Exception("Cleanup skipped");
+    await RemoteSessionCleanup.RunAsync(() => { }, () => { }, () => { },
+        Task.FromException(new InvalidOperationException("fixture pump failure")));
 });
 Console.WriteLine($"{count} remote Steam checks passed.");
 
